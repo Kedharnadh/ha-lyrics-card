@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const fs = require('fs');
 const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'ha-lyrics-card.js'), 'utf8');
@@ -12,96 +12,8 @@ function eq(name, got, want) {
   else { fail++; console.log('  FAIL ' + name + '\n       got  ' + g + '\n       want ' + w); }
 }
 
-class El {
-  constructor(tag) {
-    this.tagName = tag;
-    this.children = [];
-    this.parentNode = null;
-    this._txt = '';
-    this.className = '';
-    this.style = {};
-    this.dataset = {};
-    this.scrollTop = 0;
-    this.clientHeight = 0;
-    this._hidden = false;
-    const self = this;
-    this.classList = {
-      add: (c) => { if (!self._cls().includes(c)) self.className = (self.className + ' ' + c).trim(); },
-      remove: (c) => { self.className = self._cls().filter((x) => x !== c).join(' '); }
-    };
-  }
-  _cls() { return String(this.className).split(/\s+/).filter(Boolean); }
-  get hidden() { return this._hidden; }
-  set hidden(v) { this._hidden = !!v; }
-  get textContent() { return this._txt + this.children.map((c) => c.textContent).join(''); }
-  set textContent(v) { this._txt = String(v); this.children = []; }
-  appendChild(c) { c.parentNode = this; this.children.push(c); this._txt = ''; return c; }
-  _walk(fn) { for (const c of this.children) { if (c instanceof El) { fn(c); c._walk(fn); } } }
-  _matches(sel) {
-    if (sel[0] === '.') return this._cls().includes(sel.slice(1));
-    if (sel[0] === '[') return sel.includes('data-act') ? this.dataset.act !== undefined : true;
-    return this.tagName === sel;
-  }
-  querySelector(sel) {
-    const parts = sel.trim().split(/\s+/);
-    let found = null;
-    const scan = (node) => node._walk((c) => { if (!found && c._matches(parts[parts.length - 1])) found = c; });
-    scan(this);
-    return found;
-  }
-  closest(sel) {
-    let n = this;
-    while (n) { if (n._matches && n._matches(sel)) return n; n = n.parentNode; }
-    return null;
-  }
-  addEventListener() {}
-  set innerHTML(v) { this.children = []; this._txt = ''; parseInto(this, v); }
-  get offsetHeight() { return this._cls().includes('l') ? 38 : 0; }
-  get offsetTop() {
-    let t = 0;
-    let n = this.parentNode;
-    if (!n) return 0;
-    for (const c of n.children) { if (c === this) break; t += c.offsetHeight; }
-    return t;
-  }
-  scrollTo(o) { this.scrollTop = Math.max(0, o.top); }
-}
-
-function parseInto(root, html) {
-  const re = /<\/?([a-z0-9]+)([^>]*?)\/?>|([^<]+)/gi;
-  const stack = [root];
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const top = stack[stack.length - 1];
-    if (m[3] !== undefined) { const t = m[3].trim(); if (t && top.tagName !== 'style') top._txt += t; continue; }
-    if (m[0][1] === '/') { if (stack.length > 1) stack.pop(); continue; }
-    const cls = /class="([^"]*)"/.exec(m[2] || '');
-    const el = new El(m[1]);
-    if (cls) el.className = cls[1];
-    top.appendChild(el);
-    if (!m[0].endsWith('/>')) stack.push(el);
-  }
-}
-
-const cache = new Map();
-global.HTMLElement = class {
-  attachShadow() { const r = new El('shadow'); this.root = r; return r; }
-};
-global.document = {
-  createElement: (t) => new El(t),
-  createDocumentFragment: () => new El('#frag')
-};
-global.customElements = { get: () => false, define: (t, c) => { global.Card = c; } };
-global.window = {
-  customCards: [],
-  matchMedia: () => ({ matches: false })
-};
-global.localStorage = {
-  getItem: (k) => (cache.has(k) ? cache.get(k) : null),
-  setItem: (k, v) => cache.set(k, String(v)),
-  removeItem: (k) => cache.delete(k)
-};
-global.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+const { El, install } = require('./dom-shim');
+const cache = install();
 
 eval(src);
 
@@ -276,6 +188,105 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
   await flush();
   eq('only allowlisted player', c._keys.length, 1);
   eq('allowlisted track', c._tracks[0].title, 'Get Lucky');
+
+  console.log('\nlayout options');
+  cache.clear();
+  c = makeCard({ max_lines: 7, line_height: 38 }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('stage height from max_lines', c.el.stage.style.height, '266px');
+  eq('lines padded so line 1 can centre', c.el.lines.style.paddingTop, '114px');
+  eq('bottom padding matches', c.el.lines.style.paddingBottom, '114px');
+  eq('default align', c.el.lines.style.textAlign, 'center');
+
+  c = makeCard({ height: 420 }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('explicit height wins over max_lines', c.el.stage.style.height, '420px');
+  eq('padding follows explicit height', c.el.lines.style.paddingTop, '191px');
+  eq('getCardSize follows height', c.getCardSize(), 10);
+
+  c = makeCard({ align: 'left' }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('align left', c.el.lines.style.textAlign, 'left');
+  eq('nonsense align falls back to center', makeCard({ align: 'sideways' }).config.align, 'center');
+
+  console.log('\nheader / text options');
+  c = makeCard({ show_header: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('show_header false hides header', c.el.head.hidden, true);
+
+  c = makeCard({ show_friendly_name: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('artist only, no friendly name', c.el.sub.textContent, 'Radiohead');
+
+  console.log('\nbackground tuning');
+  c = makeCard({ background_blur: 30, background_dim: 0.2, background_veil: 0.8, art_size: 64 },
+    [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('blur var', c.style.getPropertyValue('--bg-blur'), '30px');
+  eq('dim var', c.style.getPropertyValue('--bg-dim'), '0.2');
+  eq('veil var', c.style.getPropertyValue('--bg-veil'), '0.8');
+  eq('art size var', c.style.getPropertyValue('--art-size'), '64px');
+
+  eq('blur clamped to max', makeCard({ background_blur: 9999 }).config.background_blur, 80);
+  eq('dim clamped to 0..1', makeCard({ background_dim: 5 }).config.background_dim, 1);
+  eq('font_size clamped', makeCard({ font_size: 9999 }).config.font_size, 120);
+  eq('font_size floor', makeCard({ font_size: -5 }).config.font_size, 8);
+  eq('bad numeric falls back to default', makeCard({ font_size: 'big' }).config.font_size, 28);
+  eq('entities coerced to array', makeCard({ entities: 'media_player.tv' }).config.entities.length, 0);
+
+  console.log('\ncolours');
+  c = makeCard({ text_color: '#ff0000', highlight_color: '#00ff00' }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('text_color applied', c.style.getPropertyValue('--ha-lyrics-secondary'), '#ff0000');
+  eq('highlight_color applied', c.style.getPropertyValue('--ha-lyrics-primary'), '#00ff00');
+  eq('invalid hex ignored', makeCard({ text_color: 'red; background:url(x)' }).config.text_color, '');
+  eq('valid 3-digit hex kept', makeCard({ text_color: '#abc' }).config.text_color, '#abc');
+
+  console.log('\nalbum art');
+  const withArt = (cfg) => {
+    const card = makeCard(cfg || {}, [[{ track_name: 'Creep' }, CREEP]]);
+    const st = player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20);
+    st.attributes.entity_picture = '/api/media_player_proxy/x/cover.jpg';
+    card.hass = hass({ 'media_player.spotify': st });
+    return card;
+  };
+  c = withArt();
+  await flush();
+  eq('art visible when picture present', c.el.art.hidden, false);
+  eq('art src set', c.el.artImg.src, '/api/media_player_proxy/x/cover.jpg');
+  eq('blurred bg set', c.el.bg.style.backgroundImage.indexOf('cover.jpg') > -1, true);
+  eq('bg layer unhidden', c.el.bg.hidden, false);
+  eq('ha-card gets has-bg', c.el.card.classList.contains('has-bg'), true);
+
+  c = withArt({ show_album_art: false });
+  await flush();
+  eq('show_album_art false hides art', c.el.art.hidden, true);
+  eq('show_album_art false hides bg', c.el.bg.hidden, true);
+  eq('has-bg cleared', c.el.card.classList.contains('has-bg'), false);
+
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('no picture -> no art', c.el.art.hidden, true);
+
+  const jsArt = (url) => {
+    const card = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+    const st = player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20);
+    st.attributes.entity_picture = url;
+    card.hass = hass({ 'media_player.spotify': st });
+    return card._tracks[0].art;
+  };
+  eq('javascript: art url rejected', jsArt('javascript:alert(1)'), '');
+  eq('data: art url rejected', jsArt('data:text/html,<script>'), '');
+  eq('relative art url accepted', jsArt('/local/cover.png'), '/local/cover.png');
+  eq('https art url accepted', jsArt('https://i.example/c.jpg'), 'https://i.example/c.jpg');
 
   console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);

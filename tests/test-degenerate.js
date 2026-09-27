@@ -1,66 +1,10 @@
-'use strict';
+﻿'use strict';
 const fs = require('fs');
 const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'ha-lyrics-card.js'), 'utf8');
 
-class El {
-  constructor(tag) {
-    this.tagName = tag; this.children = []; this.parentNode = null; this._txt = '';
-    this.className = ''; this.style = {}; this.dataset = {}; this.scrollTop = 0;
-    this.clientHeight = 0; this._hidden = false;
-    const self = this;
-    this.classList = {
-      add: (c) => { if (!self._cls().includes(c)) self.className = (self.className + ' ' + c).trim(); },
-      remove: (c) => { self.className = self._cls().filter((x) => x !== c).join(' '); }
-    };
-  }
-  _cls() { return String(this.className).split(/\s+/).filter(Boolean); }
-  get hidden() { return this._hidden; }
-  set hidden(v) { this._hidden = !!v; }
-  get textContent() { return this._txt + this.children.map((c) => c.textContent).join(''); }
-  set textContent(v) { this._txt = String(v); this.children = []; }
-  appendChild(c) { c.parentNode = this; this.children.push(c); this._txt = ''; return c; }
-  _walk(fn) { for (const c of this.children) if (c instanceof El) { fn(c); c._walk(fn); } }
-  _matches(sel) {
-    if (sel[0] === '.') return this._cls().includes(sel.slice(1));
-    if (sel[0] === '[') return sel.includes('data-act') ? this.dataset.act !== undefined : true;
-    return this.tagName === sel;
-  }
-  querySelector(sel) {
-    const parts = sel.trim().split(/\s+/); let found = null;
-    this._walk((c) => { if (!found && c._matches(parts[parts.length - 1])) found = c; });
-    return found;
-  }
-  closest(sel) { let n = this; while (n) { if (n._matches && n._matches(sel)) return n; n = n.parentNode; } return null; }
-  addEventListener() {}
-  set innerHTML(v) { this.children = []; this._txt = ''; parseInto(this, v); }
-  get offsetHeight() { return this._cls().includes('l') ? 38 : 0; }
-  get offsetTop() {
-    let t = 0, n = this.parentNode; if (!n) return 0;
-    for (const c of n.children) { if (c === this) break; t += c.offsetHeight; }
-    return t;
-  }
-  scrollTo(o) { this.scrollTop = Math.max(0, o.top); }
-}
-function parseInto(root, html) {
-  const re = /<\/?([a-z0-9]+)([^>]*?)\/?>|([^<]+)/gi; const stack = [root]; let m;
-  while ((m = re.exec(html)) !== null) {
-    const top = stack[stack.length - 1];
-    if (m[3] !== undefined) { const t = m[3].trim(); if (t && top.tagName !== 'style') top._txt += t; continue; }
-    if (m[0][1] === '/') { if (stack.length > 1) stack.pop(); continue; }
-    const cls = /class="([^"]*)"/.exec(m[2] || '');
-    const el = new El(m[1]); if (cls) el.className = cls[1];
-    top.appendChild(el); if (!m[0].endsWith('/>')) stack.push(el);
-  }
-}
-
-const store = new Map();
-global.HTMLElement = class { attachShadow() { const r = new El('shadow'); this.root = r; return r; } };
-global.document = { createElement: (t) => new El(t), createDocumentFragment: () => new El('#frag') };
-global.customElements = { get: () => false, define: (t, c) => { global.Card = c; } };
-global.window = { customCards: [], matchMedia: () => ({ matches: false }) };
-global.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
-global.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+const { El, install } = require('./dom-shim');
+const store = install();
 global.fetch = () => Promise.resolve({ status: 404, ok: false, headers: { get: () => null }, json: () => Promise.resolve({}) });
 
 eval(src);

@@ -256,9 +256,17 @@
   var STYLE = [
     ':host{display:block}',
     '*{box-sizing:border-box}',
-    'ha-card{display:block;box-shadow:none;border-radius:12px;padding:12px 16px 8px;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#1c1c1e))}',
-    ':host{--ha-lyrics-primary:var(--primary-text-color,#e1e1e1);--ha-lyrics-secondary:var(--secondary-text-color,#9b9b9b);--ha-lyrics-accent:var(--primary-color,#03a9f4)}',
-    '.head{display:flex;align-items:flex-start;gap:8px;min-height:34px}',
+    'ha-card{position:relative;isolation:isolate;display:block;box-shadow:none;border-radius:12px;padding:12px 16px 8px;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#1c1c1e))}',
+    ':host{--ha-lyrics-primary:var(--primary-text-color,#e1e1e1);--ha-lyrics-secondary:var(--secondary-text-color,#9b9b9b);--ha-lyrics-accent:var(--primary-color,#03a9f4);--bg-blur:18px;--bg-dim:.34;--bg-veil:.62;--art-size:42px}',
+    '.bg{position:absolute;z-index:0;inset:calc(-1 * var(--bg-blur) - 16px);background-size:cover;background-position:center;filter:blur(var(--bg-blur));opacity:var(--bg-dim);pointer-events:none}',
+    '.bg[hidden]{display:none}',
+    'ha-card::after{content:"";position:absolute;z-index:0;inset:0;display:none;background:var(--ha-card-background,var(--card-background-color,#1c1c1e));opacity:var(--bg-veil);pointer-events:none}',
+    'ha-card.has-bg::after{display:block}',
+    '.head,.vp,.foot{position:relative;z-index:1}',
+    '.art{flex:none;width:var(--art-size);height:var(--art-size);border-radius:10px;overflow:hidden;background:var(--secondary-background-color,#8883)}',
+    '.art[hidden]{display:none}',
+    '.art img{display:block;width:100%;height:100%;object-fit:cover}',
+    '.head{display:flex;align-items:flex-start;gap:10px;min-height:34px}',
     '.who{flex:1;min-width:0}',
     '.title{font-size:15px;font-weight:600;color:var(--ha-lyrics-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.sub{font-size:12px;color:var(--ha-lyrics-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}',
@@ -286,7 +294,9 @@
 
   var MARKUP = [
     '<ha-card>',
+    '  <div class="bg" hidden></div>',
     '  <div class="head">',
+    '    <div class="art" hidden><img alt=""></div>',
     '    <div class="who"><div class="title"></div><div class="sub"></div></div>',
     '    <div class="dots"></div>',
     '  </div>',
@@ -305,6 +315,51 @@
     '  </div>',
     '</ha-card>'
   ].join('\n');
+
+  function num(v, dflt, lo, hi) {
+    var n = Number(v);
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
+  }
+
+  function color(v) {
+    if (typeof v !== 'string') return '';
+    v = v.trim();
+    return /^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v) ? v : '';
+  }
+
+  // Only ever feed http(s) or root-relative paths into src/background-image.
+  function artUrl(a) {
+    var keys = ['media_image_url', 'entity_picture', 'media_image', 'media_picture', 'media_artwork'];
+    for (var i = 0; i < keys.length; i++) {
+      var v = a && a[keys[i]];
+      if (typeof v !== 'string') continue;
+      v = v.trim();
+      if (!v) continue;
+      if (/^https?:\/\//i.test(v) || v.charAt(0) === '/') return v;
+    }
+    return '';
+  }
+
+  var ALIGNS = { left: 'left', center: 'center', right: 'right' };
+
+  function normalize(c) {
+    if (!Array.isArray(c.entities)) c.entities = [];
+    c.max_lines = Math.round(num(c.max_lines, 7, 1, 40));
+    c.line_height = Math.round(num(c.line_height, 38, 12, 140));
+    c.font_size = Math.round(num(c.font_size, 28, 8, 120));
+    c.height = c.height ? Math.round(num(c.height, 0, 60, 1600)) : 0;
+    c.align = ALIGNS[String(c.align || '').toLowerCase()] || 'center';
+    c.show_header = c.show_header !== false;
+    c.show_album_art = c.show_album_art !== false;
+    c.show_friendly_name = c.show_friendly_name !== false;
+    c.background_blur = Math.round(num(c.background_blur, 18, 0, 80));
+    c.background_dim = num(c.background_dim, 0.34, 0, 1);
+    c.background_veil = num(c.background_veil, 0.62, 0, 1);
+    c.art_size = Math.round(num(c.art_size, 42, 0, 200));
+    c.text_color = color(c.text_color);
+    c.highlight_color = color(c.highlight_color);
+    return c;
+  }
 
   class HaLyricsCard extends HTMLElement {
     constructor() {
@@ -328,6 +383,11 @@
       this.root = this.attachShadow({ mode: 'open' });
       this.root.innerHTML = '<style>' + STYLE + '</style>' + MARKUP;
       this.el = {
+        card: this.root.querySelector('ha-card'),
+        bg: this.root.querySelector('.bg'),
+        art: this.root.querySelector('.art'),
+        artImg: this.root.querySelector('.art img'),
+        head: this.root.querySelector('.head'),
         title: this.root.querySelector('.title'),
         sub: this.root.querySelector('.sub'),
         dots: this.root.querySelector('.dots'),
@@ -368,14 +428,14 @@
   }
 
   setConfig(cfg) {
-    this.config = Object.assign({
+    this.config = normalize(Object.assign({
       entities: [],
       max_lines: 7,
       font_size: 28,
       line_height: 38,
       smooth: true,
       show_progress: true
-    }, cfg || {});
+    }, cfg || {}));
     if (!this.el) return;
     this._applyMetrics();
     this._renderLines(true);
@@ -383,8 +443,11 @@
   }
 
   getCardSize() {
-    var lines = this.config ? this.config.max_lines : 7;
-    return Math.max(2, Math.ceil(lines / 2) + 1);
+    if (!this.config) return 4;
+    var h = this.config.height > 0
+      ? this.config.height
+      : this.config.max_lines * this.config.line_height;
+    return Math.max(2, Math.ceil(h / 50) + 1);
   }
 
   getStubConfig() {
@@ -396,10 +459,29 @@
 
   _applyMetrics() {
     if (!this.config || !this.el) return;
-    this.el.stage.style.height = (this.config.max_lines * this.config.line_height) + 'px';
-    this.el.lines.style.fontSize = this.config.font_size + 'px';
-    this.el.lines.style.lineHeight = this.config.line_height + 'px';
-    this.el.prog.hidden = this.config.show_progress === false;
+    var c = this.config;
+    var h = c.height > 0 ? c.height : c.max_lines * c.line_height;
+    this.el.stage.style.height = h + 'px';
+    this.el.lines.style.fontSize = c.font_size + 'px';
+    this.el.lines.style.lineHeight = c.line_height + 'px';
+    // Pad by half a viewport so the first and last lines can also reach the
+    // centre. Without this the first line is pinned to the top of the stage at
+    // scrollTop 0 and collides with the header.
+    var pad = Math.max(0, Math.round((h - c.line_height) / 2));
+    this.el.lines.style.paddingTop = pad + 'px';
+    this.el.lines.style.paddingBottom = pad + 'px';
+    this.el.lines.style.textAlign = c.align;
+    this.el.prog.hidden = c.show_progress === false;
+    this.el.head.hidden = !c.show_header;
+    var s = this.style;
+    s.setProperty('--bg-blur', c.background_blur + 'px');
+    s.setProperty('--bg-dim', String(c.background_dim));
+    s.setProperty('--bg-veil', String(c.background_veil));
+    s.setProperty('--art-size', c.art_size + 'px');
+    if (c.highlight_color) s.setProperty('--ha-lyrics-primary', c.highlight_color);
+    else s.removeProperty('--ha-lyrics-primary');
+    if (c.text_color) s.setProperty('--ha-lyrics-secondary', c.text_color);
+    else s.removeProperty('--ha-lyrics-secondary');
   }
 
   _collect(states) {
@@ -426,6 +508,7 @@
           album: a.media_album || '',
           duration: Number(a.media_duration) || 0,
           entity: id,
+          art: artUrl(a),
           also: []
         };
         groups.set(gk, g);
@@ -464,8 +547,37 @@
     if (el.textContent !== text) el.textContent = text;
   }
 
+  _art(track) {
+    var e = this.el;
+    var url = track && this.config.show_album_art ? (track.art || '') : '';
+    if (url && url === this._artFail) url = '';
+    if (url !== this._artUrl) {
+      this._artUrl = url;
+      if (url) {
+        var self = this;
+        e.artImg.onerror = function () {
+          if (self._artUrl !== url) return;
+          self._artFail = url;
+          self._artUrl = null;
+          self._art(track);
+        };
+        e.artImg.src = url;
+        e.bg.style.backgroundImage = 'url("' + String(url).replace(/["\\()]/g, encodeURIComponent) + '")';
+      } else {
+        e.artImg.onerror = null;
+        e.artImg.removeAttribute('src');
+        e.bg.style.backgroundImage = '';
+      }
+    }
+    var on = !!url;
+    e.art.hidden = !on;
+    e.bg.hidden = !on;
+    e.card.classList.toggle('has-bg', on);
+  }
+
   _head(order, track) {
     var e = this.el;
+    this._art(track);
     if (!track) {
       this._setText(e.title, 'Lyrics');
       var any = 0;
@@ -483,8 +595,10 @@
     this._setText(e.title, track.title);
     var bits = [];
     if (track.artist) bits.push(track.artist);
-    if (track.also.length > 1) bits.push(friendly + ' +' + (track.also.length - 1));
-    else bits.push(friendly);
+    if (this.config.show_friendly_name) {
+      if (track.also.length > 1) bits.push(friendly + ' +' + (track.also.length - 1));
+      else bits.push(friendly);
+    }
     this._setText(e.sub, bits.join(' \u00b7 '));
     var sig = this._keys.join(',') + '|' + this.idx;
     if (sig !== this._dots) {

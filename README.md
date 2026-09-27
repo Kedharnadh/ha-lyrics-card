@@ -5,7 +5,7 @@ A single-file Lovelace card that shows lyrics for whatever is playing on any
 API key.
 
 ```
-raw 28.8 KB   ·   gzip 8.4 KB
+raw 33.1 KB   ·   gzip 9.7 KB
 ```
 
 ![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
@@ -32,6 +32,11 @@ raw 28.8 KB   ·   gzip 8.4 KB
 - **Cached.** Lyrics are stored in `localStorage` per browser (up to 500 tracks,
   180 days). "No lyrics found" is remembered for a day, so a missing track is
   never re-fetched.
+- **Album art and blurred backdrop.** If the player reports a picture, it becomes
+  the card's background, blurred and dimmed behind a veil so the lyrics stay
+  readable. Turn it off with `show_album_art: false`.
+- **Make it yours.** Card height, font size, line height, alignment, colours,
+  art size, blur strength and dimming are all configurable — see [Options](#options).
 
 ## Installation (HACS)
 
@@ -68,8 +73,28 @@ the card picker by searching for **Lyrics Card**.
 | `max_lines` | `7` | Visible line height, in lines |
 | `font_size` | `28` | Lyric font size in px |
 | `line_height` | `38` | Line box height in px — raise this if lines wrap |
+| `height` | auto | Card height in px (60–1600). Overrides `max_lines` |
+| `align` | `center` | Lyric alignment: `left`, `center` or `right` |
 | `smooth` | `true` | Smooth scroll to the active line |
 | `show_progress` | `true` | Thin progress bar under the lyrics |
+| `show_header` | `true` | Show the track header |
+| `show_friendly_name` | `true` | Prefix the header with the player name |
+| `show_album_art` | `true` | Show album art and the blurred backdrop |
+| `art_size` | `42` | Album art size in px (0–200) |
+| `background_blur` | `18` | Backdrop blur in px (0–80) |
+| `background_dim` | `0.34` | How strongly the art shows through (0–1) |
+| `background_veil` | `0.62` | Card-coloured wash over the art (0–1) |
+| `text_color` | theme | Lyric colour as `#rgb` or `#rrggbb` |
+| `highlight_color` | theme | Active-lyric colour as `#rgb` or `#rrggbb` |
+
+`height` defaults to `max_lines × line_height`, so you normally only need it when
+you want a fixed card height. Out-of-range numbers are clamped rather than
+rejected, and an unparseable colour falls back to your theme.
+
+Album art is read from whichever of `entity_picture`, `media_image_url`,
+`media_image`, `media_picture` or `media_artwork` the player provides. Only
+`http(s)` and root-relative URLs are used, so a hostile entity can't smuggle a
+`javascript:` or `data:` URL into the card.
 
 ```yaml
 type: custom:ha-lyrics-card
@@ -80,6 +105,25 @@ max_lines: 5
 font_size: 32
 line_height: 44
 ```
+
+### A themed, left-aligned card
+
+```yaml
+type: custom:ha-lyrics-card
+height: 320
+align: left
+font_size: 30
+text_color: "#f2e9dc"
+highlight_color: "#ffb703"
+art_size: 56
+background_blur: 26
+background_dim: 0.45
+background_veil: 0.55
+show_friendly_name: false
+```
+
+If the blurred artwork ever fights with the lyrics, raise `background_veil`
+towards `1` (or drop `background_dim` to `0`) to push it further back.
 
 ## Manual installation
 
@@ -101,16 +145,19 @@ bottom right: `−  +0s  +  ↺  ⟳`.
 
 - `.github/workflows/hacs.yaml` runs [HACS validation](https://github.com/hacs/action)
   plus the test suite on every push and pull request.
-- `.github/workflows/release.yaml` turns a tag (`v1.0.0`) into a GitHub Release.
+- `.github/workflows/release.yaml` turns a tag (`v1.1.0`) into a GitHub Release.
   HACS tracks the default branch for updates, so tagging is only needed if you
   want a release page.
 - Tests are plain Node scripts, no dependencies:
 
   ```
-  node tests/test-logic.js   # LRC parsing, gap filling, timing transfer
-  node tests/test-card.js    # grouping, dedupe, swipe, line sync (DOM shim)
-  node tests/test-live.js    # end-to-end against the real LRCLIB API
+  node tests/test-logic.js      # LRC parsing, gap filling, timing transfer
+  node tests/test-card.js       # grouping, dedupe, swipe, line sync, options
+  node tests/test-degenerate.js # empty/degenerate hass, HA preview behaviour
+  node tests/test-live.js       # end-to-end against the real LRCLIB API
   ```
+
+  `tests/dom-shim.js` is the shared miniature DOM used by the two card suites.
 
 ## Notes
 
