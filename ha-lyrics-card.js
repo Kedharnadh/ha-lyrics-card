@@ -397,7 +397,7 @@
     var pool = this.config.entities && this.config.entities.length ? this.config.entities : null;
     var groups = new Map();
     var order = [];
-    var ids = Object.keys(states);
+    var ids = Object.keys(states || {});
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
       if (id.indexOf('media_player.') !== 0) continue;
@@ -442,8 +442,7 @@
   _render() {
     if (!this.el || !this._hass) return;
     var order = this._collect(this._hass.states);
-    var track = order[this.idx] || null;
-    var gk = track ? track.k : null;
+    var track = order[this.idx] || null;    var gk = track ? track.k : null;
     if (gk !== this.loadedKey) {
       this.loadedKey = gk;
       this._load(track);
@@ -460,13 +459,17 @@
     var e = this.el;
     if (!track) {
       this._setText(e.title, 'Lyrics');
-      this._setText(e.sub, 'Nothing playing');
+      var any = 0;
+      var s = this._hass.states || {};
+      for (var id in s) { if (id.indexOf('media_player.') === 0) { any++; } }
+      this._setText(e.sub, any ? 'Nothing playing' : 'No media players found');
       if (this._dots !== 0) { e.dots.textContent = ''; this._dots = 0; }
       e.dots.style.display = 'none';
       e.ctl.hidden = true;
       return;
     }
-    var friendly = (this._hass.states[track.entity] || {}).attributes;
+    var states = this._hass.states || {};
+    var friendly = (states[track.entity] || {}).attributes;
     friendly = (friendly && friendly.friendly_name) || track.entity;
     this._setText(e.title, track.title);
     var bits = [];
@@ -564,7 +567,7 @@
   _anchor() {
     var track = this._track();
     if (!track) { this.anchor = null; return; }
-    var s = this._hass.states[track.entity];
+    var s = (this._hass.states || {})[track.entity];
     if (!s) { this.anchor = null; return; }
     var p = Number(s.attributes && s.attributes.media_position);
     if (!Number.isFinite(p)) p = 0;
@@ -578,7 +581,7 @@
   _position() {
     var track = this._track();
     if (!track) return 0;
-    var s = this._hass.states[track.entity];
+    var s = (this._hass.states || {})[track.entity];
     if (!s) return 0;
     var a = s.attributes || {};
     var p = Number(a.media_position);

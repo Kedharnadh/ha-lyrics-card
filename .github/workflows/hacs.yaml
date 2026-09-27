@@ -39,3 +39,6 @@ jobs:
 
       - name: Card behaviour tests
         run: node tests/test-card.js
+
+      - name: Degenerate environment tests
+        run: node tests/test-degenerate.js
