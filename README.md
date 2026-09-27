@@ -5,8 +5,10 @@ A single-file Lovelace card that shows lyrics for whatever is playing on any
 API key.
 
 ```
-raw 27.4 KB   ·   gzip 8.1 KB
+raw 28.8 KB   ·   gzip 8.4 KB
 ```
+
+![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
 
 ## Features
 
