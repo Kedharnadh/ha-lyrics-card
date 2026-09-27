@@ -8,14 +8,6 @@ API key.
 raw 27.4 KB   ·   gzip 8.1 KB
 ```
 
-![Lyrics Card: synced lyrics on the left, static lyrics with nudge controls on the right](docs/card.png)
-
-<sub>
-Top: synced lyrics, with the same track playing on two devices collapsed into one
-entry (`Spotify +1`). Bottom: two different tracks, so the dots appear — and
-without real timings the `− +3s +` nudge controls show up.
-</sub>
-
 ## Features
 
 - **Any source.** Looks up `media_title` + `media_artist` + `media_album` on
@@ -46,7 +38,7 @@ without real timings the `− +3s +` nudge controls show up.
    dashboard file to the repository name, and `hacs.json` pins it explicitly via
    `filename`, so the file name must stay `ha-lyrics-card.js`.
 3. HACS → **Dashboard** → ⋮ → **Custom repositories** → add
-   `https://github.com/<you>/ha-lyrics-card` with category **Dashboard**.
+   `https://github.com/Kedharnadh/ha-lyrics-card` with category **Dashboard**.
 4. Search HACS for **Lyrics Card** → **Download**.
 5. **Settings → Dashboards → Resources** and add, if HACS didn't already:
 
