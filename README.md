@@ -8,6 +8,14 @@ API key.
 raw 27.4 KB   ·   gzip 8.1 KB
 ```
 
+![Lyrics Card: synced lyrics on the left, static lyrics with nudge controls on the right](docs/card.png)
+
+<sub>
+Top: synced lyrics, with the same track playing on two devices collapsed into one
+entry (`Spotify +1`). Bottom: two different tracks, so the dots appear — and
+without real timings the `− +3s +` nudge controls show up.
+</sub>
+
 ## Features
 
 - **Any source.** Looks up `media_title` + `media_artist` + `media_album` on
