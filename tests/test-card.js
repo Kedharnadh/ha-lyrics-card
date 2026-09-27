@@ -386,6 +386,208 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
   eq('timeout clamped', makeCard({ music_assistant_timeout: 999 }, []).config.music_assistant_timeout, 30);
   eq('url trimmed', makeCard({ music_assistant_url: '  http://ma:8095  ' }, []).config.music_assistant_url, 'http://ma:8095');
 
+  // ---------------------------------------------------------------------------
+  // Unsynced lyrics: uniform small type, drifting slowly upward.
+  // ---------------------------------------------------------------------------
+  console.log('\nmarquee: unsynced lyrics');
+
+  const PLAIN = {
+    id: 9, trackName: 'Pale', artistName: 'Sneaker Pimps', albumName: 'Bloodsport',
+    duration: 244, instrumental: false,
+    plainLyrics: 'You are the finest thing I have ever seen\nI love you when you sleep\nYou are the finest thing\nAnd you are always here'
+  };
+  const plainTable = [[{ track_name: 'Pale' }, PLAIN]];
+  const plainState = () => hass({
+    'media_player.pale': player('media_player.pale', 'Pale', 'Sneaker Pimps', 'Bloodsport', 244, 0)
+  });
+
+  // The fake stage has no layout, so give it a scrollable box to work against.
+  const sizeStage = (card, viewH, contentH) => {
+    card.el.stage.clientHeight = viewH;
+    card.el.stage.scrollHeight = contentH;
+  };
+  // Drive the motion with explicit timestamps instead of leaning on the shared
+  // rAF queue: every earlier card in this file still owns a live loop, so the
+  // queue starves and the card's 0.25s per-frame clamp (which stops a
+  // backgrounded tab teleporting the block) then eats most of the elapsed time.
+  // The rAF wiring itself is covered separately by the start/stop checks.
+  let _t = 100000;
+  const step = (card, dtMs) => {
+    const m = card._marq;
+    m.started = true; m.last = _t; m.hold = 0; m.until = 0;
+    _t += dtMs;
+    card._marqueeStep(_t);
+  };
+  const run = (card, seconds) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) step(card, 1000 / 60);
+  };
+  // Same, but leaves hold/until alone so the card's own rests and the loop-back
+  // are observable instead of being reset every frame.
+  const stepRaw = (card, dtMs) => {
+    const m = card._marq;
+    m.started = true; m.last = _t;
+    _t += dtMs;
+    card._marqueeStep(_t);
+  };
+  const runRaw = (card, seconds) => {
+    for (let i = 0; i < Math.round(seconds * 60); i++) stepRaw(card, 1000 / 60);
+  };
+
+  global.__resetFrames(4000);
+  let sc = makeCard({}, plainTable);
+  sc.hass = plainState();
+  await flush();
+  eq('unsynced lyrics are static kind', sc.data.kind, 'static');
+  eq('lines get the static class', /(^|\s)static(\s|$)/.test(sc.el.lines.className), true);
+  eq('marquee active for unsynced', sc._isMarquee(), true);
+  eq('default static font size', sc.config.static_font_size, 18);
+  eq('default static scroll speed', sc.config.static_scroll_speed, 14);
+  eq('static scroll on by default', sc.config.static_scroll, true);
+  eq('css var published', sc.style.getPropertyValue('--static-size'), '18px');
+  // Padding is measured against the small marquee line box, not the big one.
+  const stageH = (cfg) => (cfg.height > 0 ? cfg.height : cfg.max_lines * cfg.line_height);
+  eq('padding measured against small line box', parseInt(sc.el.lines.style.paddingTop, 10),
+    Math.max(0, Math.round((stageH(sc.config) - Math.round(18 * 1.6)) / 2)));
+
+  // Drift: 14px/s for one second should move the stage ~14px.
+  sizeStage(sc, 200, 1000);
+  await run(sc, 1);
+  eq('drifts at the configured speed', Math.round(sc.el.stage.scrollTop), 14);
+
+  // Big jumps are clamped so a backgrounded tab does not teleport the block.
+  sc._marq.hold = 0;
+  sc._marq.until = 0;
+  sc._marq.pos = 0;
+  sc.el.stage.scrollTop = 0;
+  step(sc, 2000);
+  eq('a stalled tab resumes slowly instead of jumping', sc.el.stage.scrollTop, 3.5);
+
+  // Reaching the end rests, then loops back to the top. Crank the speed so the
+  // wrap happens in a few seconds of virtual time, and let the loop do the work
+  // - setting scrollTop by hand would not catch a missing reset.
+  sc.config.static_scroll_speed = 200;
+  sc._marq.started = false;
+  sc._marq.hold = 0;
+  sc._marq.until = 0;
+  sc._marq.pos = 0;
+  sc.el.stage.scrollTop = 0;
+  runRaw(sc, 4.2);
+  eq('reaches the end of the content', sc.el.stage.scrollTop, 800);
+  eq('hold armed at the end', sc._marq.hold > 0, true);
+  runRaw(sc, 1);
+  eq('still resting on the last line', sc.el.stage.scrollTop, 800);
+  runRaw(sc, 1.5);
+  eq('loops back to the top', sc.el.stage.scrollTop, 0);
+  eq('lingers before drifting off again', sc._marq.hold > 0, true);
+  sc.config.static_scroll_speed = 14;
+
+  // Sub-pixel drift must still accumulate. The offset is tracked in JS, not
+  // read back from the element, because scroll offsets snap to whole device
+  // pixels: 14px/s is 0.23px per 60Hz frame, so a read-modify-write would sit
+  // at 0 forever. The fake element here rounds like a real one.
+  let snap = makeCard({}, plainTable);
+  snap.hass = plainState();
+  await flush();
+  sizeStage(snap, 200, 1000);
+  Object.defineProperty(snap.el.stage, 'scrollTop', {
+    get() { return Math.round(this._v || 0); },
+    set(v) { this._v = v; },
+    configurable: true
+  });
+  for (let i = 0; i < 60; i++) step(snap, 1000 / 60);
+  eq('sub-pixel drift accumulates past zero', Math.round(snap.el.stage.scrollTop), 14);
+  snap.disconnectedCallback();
+
+  // _scrollTo must not drag the block back to the (estimated) active line.
+  const scrollCalls = [];
+  const realScroll = sc.el.stage.scrollTo;
+  sc.el.stage.scrollTo = function (o) { scrollCalls.push(o); return realScroll.call(this, o); };
+  sc._update(true);
+  eq('no snap-to-line scroll while drifting', scrollCalls.length, 0);
+  sc.el.stage.scrollTo = realScroll;
+
+  // A manual scroll parks it. step() clears the interaction window, so drive
+  // these frames directly to leave `until` alone.
+  sc._marq.hold = 0;
+  sc._marq.until = 0;
+  sc._marq.started = true;
+  sc._marq.last = _t;
+  sc.el.stage.scrollTop = 100;
+  sc.el.stage.dispatchEvent({ type: 'wheel' });
+  eq('interaction window recorded', sc._marq.until > 0, true);
+  for (let i = 0; i < 120; i++) {
+    sc._marq.started = true; sc._marq.last = _t; sc._marq.hold = 0;
+    _t += 1000 / 60;
+    sc._marqueeStep(_t);
+  }
+  eq('manual scroll pauses the drift', sc.el.stage.scrollTop, 100);
+  // Once the window lapses it must carry on from where the reader left it,
+  // not snap back to the old position.
+  sc._marq.until = Date.now() - 1;
+  const resumeFrom = sc.el.stage.scrollTop;
+  sc._marq.started = true;
+  sc._marq.last = _t;
+  sc._marq.hold = 0;
+  _t += 1000;
+  sc._marqueeStep(_t);
+  eq('resumes from the parked position', sc.el.stage.scrollTop, resumeFrom + 3.5);
+  sc._marq.until = 0;
+
+  // Opting out restores the centred highlight scroll.
+  let noScroll = makeCard({ static_scroll: false }, plainTable);
+  noScroll.hass = plainState();
+  await flush();
+  eq('static class dropped when disabled', /(^|\s)static(\s|$)/.test(noScroll.el.lines.className), false);
+  eq('marquee inactive when disabled', noScroll._isMarquee(), false);
+  eq('padding back to the big line box', parseInt(noScroll.el.lines.style.paddingTop, 10),
+    Math.max(0, Math.round((stageH(noScroll.config) - noScroll.config.line_height) / 2)));
+  sizeStage(noScroll, 200, 1000);
+  noScroll.el.stage.scrollTop = 0;
+  let centred = false;
+  noScroll.el.stage.scrollTo = function () { centred = true; };
+  noScroll._update(true);
+  eq('disabled marquee centres the active line', centred, true);
+  // Synced lyrics must keep the karaoke behaviour.
+  let sy = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  sy.hass = hass({
+    'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20)
+  });
+  await flush();
+  eq('synced lyrics are synced kind', sy.data.kind, 'synced');
+  eq('no static class on synced lyrics', /(^|\s)static(\s|$)/.test(sy.el.lines.className), false);
+  eq('marquee never runs on synced lyrics', sy._isMarquee(), false);
+
+  // Reduced motion: leave the block centred and let the reader scroll.
+  global.__reducedMotion = true;
+  let rm = makeCard({}, plainTable);
+  rm.hass = plainState();
+  await flush();
+  sizeStage(rm, 200, 1000);
+  for (let i = 0; i < 120; i++) rm._marqueeStep((_t += 1000 / 60));
+  eq('reduced motion disables the drift', rm.el.stage.scrollTop, 0);
+  eq('no frame armed under reduced motion', (rm._marq && rm._marq.raf) || 0, 0);
+  global.__reducedMotion = false;
+
+  // Custom sizing, and the clamps.
+  let tuned = makeCard({ static_font_size: 26, static_scroll_speed: 40 }, plainTable);
+  tuned.hass = plainState();
+  await flush();
+  eq('custom static size honoured', tuned.style.getPropertyValue('--static-size'), '26px');
+  sizeStage(tuned, 200, 4000);
+  await run(tuned, 1);
+  eq('custom speed honoured', Math.round(tuned.el.stage.scrollTop), 40);
+  eq('font size clamped high', makeCard({ static_font_size: 999 }, []).config.static_font_size, 48);
+  eq('font size clamped low', makeCard({ static_font_size: 1 }, []).config.static_font_size, 10);
+  eq('speed clamped high', makeCard({ static_scroll_speed: 5000 }, []).config.static_scroll_speed, 60);
+  eq('speed clamped low', makeCard({ static_scroll_speed: 0 }, []).config.static_scroll_speed, 4);
+
+  // Teardown must not leave a rAF loop running.
+  tuned.disconnectedCallback();
+  eq('disconnect cancels the frame', tuned._marq.raf, 0);
+  tuned.connectedCallback();
+  tuned.disconnectedCallback();
+  global.__resetFrames();
+
   console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();

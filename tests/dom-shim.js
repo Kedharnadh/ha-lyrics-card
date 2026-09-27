@@ -15,7 +15,20 @@ class El {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.parentNode = null; this._txt = '';
     this.className = ''; this.style = new Style(); this.dataset = {};
-    this.scrollTop = 0; this.clientHeight = 0; this._hidden = false;
+    this.scrollTop = 0; this.clientHeight = 0; this.scrollHeight = 0; this._hidden = false;
+    this._handlers = {};
+    this.addEventListener = function (type, fn) {
+      (self._handlers[type] = self._handlers[type] || []).push(fn);
+    };
+    this.removeEventListener = function (type, fn) {
+      if (!self._handlers[type]) return;
+      self._handlers[type] = self._handlers[type].filter((f) => f !== fn);
+    };
+    this.dispatchEvent = function (ev) {
+      const l = self._handlers[ev && ev.type] || [];
+      for (let i = 0; i < l.length; i++) l[i](ev);
+      return true;
+    };
     const self = this;
     this.classList = {
       add: (c) => { if (!self._cls().includes(c)) self.className = (self.className + ' ' + c).trim(); },
@@ -90,13 +103,55 @@ function install() {
     createDocumentFragment: () => new El('#frag')
   };
   global.customElements = { get: () => false, define: (t, c) => { global.Card = c; } };
-  global.window = { customCards: [], matchMedia: () => ({ matches: false }) };
+  global.window = { customCards: [], matchMedia: () => ({ matches: global.__reducedMotion === true }) };
   global.localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
     removeItem: (k) => store.delete(k)
   };
-  global.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+  // requestAnimationFrame.
+//
+// Frames are queued and drained on a later turn so async continuations still
+// work, but the clock is virtual (__frameTime) and the queue is budgeted.
+// Both matter: the unsynced-lyrics marquee re-queues a frame from inside its
+// own callback, and against a real clock that would spin forever and hang the
+// test process. A real browser stops firing rAF for a background tab, so
+// spending the budget and dropping the queue is a faithful stand-in, not a
+// fudge. Tests opt in to more frames with __resetFrames(n) and drive the clock
+// with __advanceFrames(ms).
+let _frameId = 0;
+let _budget = 40;
+let _queue = [];
+let _scheduled = false;
+
+function _flushFrames() {
+  if (_budget-- <= 0) { _queue = []; return; }
+  const batch = _queue;
+  _queue = [];
+  for (let i = 0; i < batch.length; i++) { global.__frames++; batch[i].fn(global.__frameTime); }
+  if (_queue.length) setTimeout(_flushFrames, 0);
+}
+
+global.__frameTime = 0;
+global.__frames = 0;
+global.__resetFrames = function (n) { _budget = n == null ? 40 : n; _queue = []; global.__frames = 0; };
+global.__advanceFrames = function (ms) {
+  global.__frameTime += ms;
+  return new Promise(function (r) { setTimeout(r, 0); });
+};
+
+global.requestAnimationFrame = function (fn) {
+  const id = ++_frameId;
+  _queue.push({ id: id, fn: fn });
+  if (!_scheduled) {
+    _scheduled = true;
+    setTimeout(function () { _scheduled = false; _flushFrames(); }, 0);
+  }
+  return id;
+};
+global.cancelAnimationFrame = function (id) {
+  _queue = _queue.filter(function (f) { return f.id !== id; });
+};
   // WebSocket stand-in for the Music Assistant path. A test sets
   // global.__maHandler = (msg) => reply, where reply is the object to send back
   // (return undefined to stay silent, e.g. to simulate a dropped connection).

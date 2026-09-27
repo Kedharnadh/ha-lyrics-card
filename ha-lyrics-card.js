@@ -463,6 +463,14 @@
     '.l{color:var(--ha-lyrics-secondary);opacity:.32;transition:opacity .25s,color .25s,transform .25s;text-align:center;padding:2px 4px;transform:scale(.97)}',
     '.l.on{color:var(--ha-lyrics-primary);opacity:1;font-weight:600;transform:scale(1)}',
     '.l.msg{opacity:.6;font-style:italic}',
+    // Unsynced lyrics: one uniform small size, drifting up slowly. The .on class
+    // still lands on a line, but only as a gentle brightness step - no scaling
+    // and no bold, so the block reads as a single block of text. The dim value is
+    // kept high deliberately: these lines are small, and the secondary colour
+    // only measures ~6:1 at full strength, so much below this and the unread
+    // lines drop under 4.5:1.
+    '.lines.static .l{font-size:var(--static-size,18px);line-height:1.6;opacity:.82;transform:none;transition:opacity .4s}',
+    '.lines.static .l.on{color:var(--ha-lyrics-secondary);opacity:1;font-weight:400;transform:none}',
     '.foot{display:flex;align-items:center;gap:10px;margin-top:6px}',
     '.prog{flex:1;height:3px;border-radius:2px;background:var(--divider-color,rgba(127,127,127,.25));overflow:hidden}',
     '.prog i{display:block;height:100%;background:var(--ha-lyrics-accent);border-radius:2px;transition:width .3s linear}',
@@ -545,6 +553,11 @@
     c.music_assistant_url = str(c.music_assistant_url);
     c.music_assistant_token = str(c.music_assistant_token);
     c.music_assistant_timeout = num(c.music_assistant_timeout, 8, 2, 30);
+    // Unsynced lyrics get a slow auto-scrolling "marquee" instead of a faked
+    // highlight, because pacing lines out to fake a karaoke highlight reads oddly.
+    c.static_scroll = c.static_scroll !== false;
+    c.static_font_size = Math.round(num(c.static_font_size, 18, 10, 48));
+    c.static_scroll_speed = num(c.static_scroll_speed, 14, 4, 60);
     c.text_color = color(c.text_color);
     c.highlight_color = color(c.highlight_color);
     return c;
@@ -596,6 +609,7 @@
       this._onMove = this._onMove.bind(this);
       this._onUp = this._onUp.bind(this);
       this._tick = this._tick.bind(this);
+      this._marqTouch = this._marqTouch.bind(this);
       this.el.ctl.addEventListener('click', this._onClick);
       this.el.ctl.addEventListener('pointerdown', this._onHold);
       this.el.offv.addEventListener('wheel', this._onWheel, { passive: false });
@@ -603,6 +617,9 @@
       this.el.vp.addEventListener('pointermove', this._onMove);
       this.el.vp.addEventListener('pointerup', this._onUp);
       this.el.vp.addEventListener('pointercancel', this._onUp);
+      // Any manual scrolling parks the marquee for a few seconds.
+      this.el.stage.addEventListener('wheel', this._marqTouch, { passive: true });
+      this.el.stage.addEventListener('touchmove', this._marqTouch, { passive: true });
     }
     if (!this.timer) this.timer = setInterval(this._tick, TICK);
     this._applyMetrics();
@@ -614,6 +631,7 @@
 
   disconnectedCallback() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this._marqueeStop();
   }
 
   setConfig(cfg) {
@@ -655,8 +673,10 @@
     this.el.lines.style.lineHeight = c.line_height + 'px';
     // Pad by half a viewport so the first and last lines can also reach the
     // centre. Without this the first line is pinned to the top of the stage at
-    // scrollTop 0 and collides with the header.
-    var pad = Math.max(0, Math.round((h - c.line_height) / 2));
+    // scrollTop 0 and collides with the header. Marquee lines are smaller, so
+    // measure against their own line box or the padding swallows the card.
+    var lh = this._isMarquee() ? Math.round(c.static_font_size * 1.6) : c.line_height;
+    var pad = Math.max(0, Math.round((h - lh) / 2));
     this.el.lines.style.paddingTop = pad + 'px';
     this.el.lines.style.paddingBottom = pad + 'px';
     this.el.lines.style.textAlign = c.align;
@@ -667,6 +687,7 @@
     s.setProperty('--bg-dim', String(c.background_dim));
     s.setProperty('--bg-veil', String(c.background_veil));
     s.setProperty('--art-size', c.art_size + 'px');
+    s.setProperty('--static-size', c.static_font_size + 'px');
     if (c.highlight_color) s.setProperty('--ha-lyrics-primary', c.highlight_color);
     else s.removeProperty('--ha-lyrics-primary');
     if (c.text_color) s.setProperty('--ha-lyrics-secondary', c.text_color);
@@ -863,6 +884,12 @@
     this._scrollTarget = null;
     this._barPct = -1;
     var d = this.data;
+    // The marquee class changes the line box, so metrics (and the half-viewport
+    // padding) have to be recomputed before anything is measured.
+    box.classList.toggle('static', this._isMarquee());
+    this._applyMetrics();
+    this._marqueeReset();
+    this._marqueeStop();
     if (!d || !d.lines || !d.lines.length) {
       var text = d && d.kind === 'instrumental' ? '\u266a  Instrumental' : (this.msg || 'Nothing playing');
       var m = document.createElement('div');
@@ -919,6 +946,7 @@
   }
 
   _update(force) {
+    this._marqueeSync();
     if (!this.data || !this.data.lines || !this.lineEls || !this.lineEls.length) return;
     var raw = this._position();
     var pos = raw + (this.data.kind === 'static' ? (this.offset || 0) : 0);
@@ -931,7 +959,9 @@
         els[i].className = 'l' + (i === idx ? ' on' : '');
       }
       this.active = idx;
-      this._scrollTo(els[idx]);
+      // The marquee owns scrollTop; letting _scrollTo chase the (estimated)
+      // active line here would drag the block around and cancel the drift.
+      if (!this._isMarquee()) this._scrollTo(els[idx]);
     }
     var track = this._track();
     var dur = track ? (Number(track.duration) || 0) : 0;
@@ -954,6 +984,103 @@
       typeof window.matchMedia === 'function' &&
       (!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     stage.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  // --- slow marquee for unsynced lyrics --------------------------------------
+  // When the timings are estimated there is nothing to highlight against, so
+  // rather than fake one we shrink the whole block to one size and drift it
+  // upward. Driven by rAF so the motion is smooth, independent of the 5 Hz
+  // position tick, and it stops cleanly when the element goes away.
+
+  _isMarquee() {
+    var c = this.config;
+    return !!(c && c.static_scroll && this.data && this.data.kind === 'static');
+  }
+
+  _reducedMotion() {
+    return typeof window.matchMedia === 'function' &&
+      !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  _marqueeSync() {
+    var on = this._isMarquee() && !this._reducedMotion() && !!this.el;
+    if (on) this._marqueeStart();
+    else this._marqueeStop();
+  }
+
+  _marqueeStart() {
+    var m = this._marq;
+    if (!m) m = this._marq = { raf: 0, last: 0, started: false, hold: 0, atEnd: false, until: 0, pos: 0 };
+    if (m.raf) return;
+    var self = this;
+    m.raf = requestAnimationFrame(function (ts) {
+      self._marq.raf = 0;
+      self._marqueeStep(ts);
+    });
+  }
+
+  _marqueeStop() {
+    if (this._marq && this._marq.raf) {
+      cancelAnimationFrame(this._marq.raf);
+      this._marq.raf = 0;
+    }
+  }
+
+  _marqueeReset() {
+    if (!this._marq) return;
+    this._marq.last = 0;
+    this._marq.started = false;
+    this._marq.hold = 0;
+    this._marq.atEnd = false;
+    this._marq.pos = 0;
+    if (this.el && this.el.stage) this.el.stage.scrollTop = 0;
+  }
+
+  _marqueeStep(ts) {
+    var m = this._marq;
+    if (!m || !this._isMarquee() || !this.el || !this.el.stage) { if (m) m.raf = 0; return; }
+    var stage = this.el.stage;
+    // rAF hands us a DOMHighResTimeStamp; fall back to clock time if not.
+    // Use an explicit flag rather than testing m.last for truthiness - a first
+    // frame timestamp of exactly 0 is legitimate.
+    if (!m.started) { m.started = true; m.last = ts; }
+    var dt = Math.min(0.25, Math.max(0, (ts - m.last) / 1000));
+    m.last = ts;
+
+    var max = stage.scrollHeight - stage.clientHeight;
+    if (max > 1) {
+      var cfg = this.config;
+      if (Date.now() < (m.until || 0)) {
+        // The reader scrolled by hand - adopt wherever they left it.
+        m.pos = stage.scrollTop;
+      } else if (m.hold > 0) {
+        m.hold -= dt;
+        if (m.hold <= 0 && m.atEnd) {
+          // Rested on the last line: start over from the top.
+          m.atEnd = false;
+          m.pos = 0;
+          stage.scrollTop = 0;
+          m.hold = 1.4;               // and linger before drifting off again
+        }
+      } else {
+        // Accumulate the offset here and write the absolute value; do NOT
+        // derive it from stage.scrollTop. Scroll offsets snap to whole device
+        // pixels, and at 14px/s a 60Hz frame is only 0.23px, so reading the
+        // element back and adding to it would read 0 and add 0.23 forever.
+        m.pos = Math.min(max, m.pos + cfg.static_scroll_speed * dt);
+        stage.scrollTop = m.pos;
+        if (m.pos >= max - 0.5) { m.hold = 2.2; m.atEnd = true; }
+      }
+    }
+    // Keep the next frame queued. rAF stops firing when the host is idle, which
+    // is exactly what we want for a backgrounded dashboard.
+    if (this._isMarquee()) {
+      var self = this;
+      m.raf = requestAnimationFrame(function (t2) {
+        self._marq.raf = 0;
+        self._marqueeStep(t2);
+      });
+    }
   }
 
   _tick() {
@@ -1053,6 +1180,10 @@
       return;
     }
     if (Math.abs(d.dx) > SWIPE_PX) this._go(this.idx + (d.dx < 0 ? 1 : -1));
+  }
+
+  _marqTouch() {
+    if (this._marq) this._marq.until = Date.now() + 3200;
   }
 
   _next(dir) {

@@ -5,7 +5,7 @@ A single-file Lovelace card that shows lyrics for whatever is playing on any
 API key.
 
 ```
-raw 40.9 KB   ·   gzip 12.1 KB
+raw 46.4 KB   ·   gzip 13.8 KB
 ```
 
 ![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
@@ -90,6 +90,9 @@ the card picker by searching for **Lyrics Card**.
 | `music_assistant_url` | — | MA server, e.g. `http://ma.local:8095` |
 | `music_assistant_token` | — | MA long-lived access token |
 | `music_assistant_timeout` | `8` | Seconds to wait for MA before falling back (2–30) |
+| `static_scroll` | `true` | Drift unsynced lyrics up slowly instead of faking a highlight |
+| `static_font_size` | `18` | Font size for unsynced lyrics in px (10–48) |
+| `static_scroll_speed` | `14` | Drift speed in px per second (4–60) |
 
 `height` defaults to `max_lines × line_height`, so you normally only need it when
 you want a fixed card height. Out-of-range numbers are clamped rather than
@@ -99,6 +102,26 @@ Album art is read from whichever of `entity_picture`, `media_image_url`,
 `media_image`, `media_picture` or `media_artwork` the player provides. Only
 `http(s)` and root-relative URLs are used, so a hostile entity can't smuggle a
 `javascript:` or `data:` URL into the card.
+
+### Unsynced lyrics
+
+Plenty of tracks have plain lyrics with no timings. Highlighting one line at a
+time would mean inventing them, so instead the whole lyric block is set in one
+smaller font (`static_font_size`) and drifts slowly upward at
+`static_scroll_speed` px per second, rests on the last line, then loops. It
+keeps drifting whatever the playback state — a paused track is usually just
+paused, not finished.
+
+- Scrolling by hand parks it for a few seconds so you can actually read a line.
+- `prefers-reduced-motion` is honoured: no drift, the block sits centred and you
+  scroll it yourself.
+- Synced lyrics are untouched — they keep the large active line and scroll to it.
+- The `−`/`+` nudge still works. It shifts the estimate of which line is "now",
+  which matters when the timings were borrowed from a different release of the
+  same song.
+
+Set `static_scroll: false` to get the old behaviour back: estimated timings with
+a large centred highlight.
 
 ```yaml
 type: custom:ha-lyrics-card
