@@ -253,6 +253,187 @@
     });
   }
 
+  // --- Music Assistant (optional lyrics source) ------------------------------
+  // Music Assistant already resolves synced lyrics and prefers the track's own
+  // provider before falling back to LRCLIB/Genius, so it can cover tracks this
+  // card would miss. Home Assistant exposes none of it: the media_player entity
+  // has no lyrics attribute, the music_assistant integration registers no
+  // websocket commands, and music_assistant.get_queue omits lyrics from its
+  // response. So we talk to MA's own websocket at GET /ws (port 8095) using its
+  // command envelope {command, args, message_id} -> {message_id, result}.
+  //
+  //   auth                      args {token}                 (long-lived token)
+  //   metadata/get_track_lyrics args {track: MediaItemType}   -> [lyrics, lrc]
+  //
+  // See music-assistant/server controllers/webserver/websocket_client.py and
+  // controllers/metadata/controller.py. This is an internal command with no
+  // Home Assistant integration surface, so it is opt-in and always falls back
+  // to LRCLIB.
+
+  var MA_PROVIDER_RE = /^[a-z0-9][a-z0-9_.-]*$/i;
+
+  // Pull the provider and item id out of a Music Assistant media URI. Mirrors
+  // music_assistant/helpers/uri.py parse_uri: "provider://media_type/item_id",
+  // plus the newer "provider:media_type:item_id" form. Anything else (a plain
+  // stream URL, a local file) is not a Music Assistant track.
+  function maTrackRef(uri) {
+    if (typeof uri !== 'string') return null;
+    var u = uri.trim();
+    if (!u) return null;
+    var provider, type, itemId;
+    if (u.indexOf('://') >= 0 && u.split('/').length >= 4) {
+      var rest = u.split('://').slice(1).join('://');
+      provider = u.split('://')[0];
+      var seg = rest.split('/');
+      type = seg[0];
+      itemId = seg.slice(1).join('/');
+    } else if (u.indexOf(':') >= 0 && u.split(':').length === 3) {
+      var p2 = u.split(':');
+      provider = p2[0];
+      type = p2[1];
+      itemId = p2[2];
+    } else {
+      return null;
+    }
+    if (type !== 'track') return null;
+    // Guard against a crafted stream URL like "http://track/1" parsing as a
+    // provider: MA would just reject it, but failing here keeps the junk out.
+    if (!MA_PROVIDER_RE.test(provider)) return null;
+    if (!itemId || /[\s]/.test(itemId)) return null;
+    return { provider: provider, item_id: itemId, uri: u };
+  }
+
+  function maSocketUrl(raw) {
+    var u = String(raw == null ? '' : raw).trim();
+    if (!u) return '';
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) u = 'http://' + u.replace(/^\/+/, '');
+    var url;
+    try {
+      url = new URL(u);
+    } catch (e) {
+      return '';
+    }
+    if (url.protocol === 'https:') url.protocol = 'wss:';
+    else if (url.protocol === 'http:') url.protocol = 'ws:';
+    else if (url.protocol !== 'ws:' && url.protocol !== 'wss:') return '';
+    if (!url.port) url.port = '8095';
+    // MA serves the websocket on /ws; keep any base path the user configured
+    // ahead of it, but never double up the trailing slash.
+    var base = url.pathname.replace(/\/+$/, '');
+    if (!/\/ws$/.test(base)) base += '/ws';
+    url.pathname = base;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  }
+
+  // One request/response round trip per call. Resolves with MA's `result` and
+  // rejects on socket error, auth failure, command error or timeout, so the
+  // caller can always fall back to LRCLIB.
+  function maCall(socketUrl, token, send, ms) {
+    return new Promise(function (resolve, reject) {
+      var ws;
+      try {
+        ws = new WebSocket(socketUrl);
+      } catch (e) {
+        reject(new Error('ma socket'));
+        return;
+      }
+      var nextId = 0;
+      var done = false;
+      var timer = setTimeout(function () { finish(new Error('ma timeout')); }, ms);
+      function finish(err, val) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { ws.close(); } catch (e2) { /* already closing */ }
+        if (err) reject(err);
+        else resolve(val);
+      }
+      function command(name, args) {
+        nextId += 1;
+        ws.send(JSON.stringify({ command: name, args: args, message_id: nextId }));
+        return nextId;
+      }
+      ws.onopen = function () {
+        try {
+          command('auth', { token: token });
+        } catch (e) {
+          finish(new Error('ma send'));
+        }
+      };
+      ws.onerror = function () { finish(new Error('ma socket')); };
+      ws.onclose = function () { finish(new Error('ma closed')); };
+      ws.onmessage = function (ev) {
+        var msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (!msg || typeof msg !== 'object') return;
+        if (nextId === 1 && msg.message_id === 1) {
+          // auth reply: anything other than an error means the token is good
+          if (msg.error_code || msg.error_message || msg.success === false) {
+            finish(new Error('ma auth'));
+            return;
+          }
+          try {
+            command('metadata/get_track_lyrics', { track: send });
+          } catch (e) {
+            finish(new Error('ma send'));
+          }
+          return;
+        }
+        if (msg.message_id === 2) {
+          if (msg.error_code || msg.error_message || msg.success === false) {
+            finish(new Error('ma command'));
+            return;
+          }
+          finish(null, msg.result);
+        }
+      };
+    });
+  }
+
+  // Returns the same shape as fetchLyrics(), or null when MA cannot serve this
+  // track. Never throws.
+  function fetchMaLyrics(ref, cfg) {
+    var socketUrl = maSocketUrl(cfg.music_assistant_url);
+    if (!socketUrl || !cfg.music_assistant_token || !ref) return Promise.resolve(null);
+    var timeout = cfg.music_assistant_timeout * 1000;
+    return maCall(
+      socketUrl,
+      cfg.music_assistant_token,
+      {
+        item_id: ref.item_id,
+        provider: ref.provider,
+        media_type: 'track',
+        uri: ref.uri
+      },
+      timeout
+    ).then(function (result) {
+      var pair = Array.isArray(result) ? result : null;
+      var plain = pair && typeof pair[0] === 'string' ? pair[0] : '';
+      var lrc = pair && typeof pair[1] === 'string' ? pair[1] : '';
+      var body = (lrc || plain || '').trim();
+      if (!body) return null;
+      var stamped = parseLrc(body);
+      if (stamped.length) {
+        return { kind: 'synced', lines: stamped, source: 'music_assistant' };
+      }
+      var texts = splitPlain(body);
+      if (!texts.length) return null;
+      return {
+        kind: 'static',
+        lines: texts.map(function (t, i) { return { t: i * READ_PACE, text: t }; }),
+        source: 'music_assistant'
+      };
+    }).catch(function () {
+      return null;
+    });
+  }
+
   var STYLE = [
     ':host{display:block}',
     '*{box-sizing:border-box}',
@@ -321,6 +502,10 @@
     return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
   }
 
+  function str(v) {
+    return typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim();
+  }
+
   function color(v) {
     if (typeof v !== 'string') return '';
     v = v.trim();
@@ -356,6 +541,10 @@
     c.background_dim = num(c.background_dim, 0.34, 0, 1);
     c.background_veil = num(c.background_veil, 0.62, 0, 1);
     c.art_size = Math.round(num(c.art_size, 42, 0, 200));
+    c.lyrics_source = c.lyrics_source === 'music_assistant' ? 'music_assistant' : 'lrclib';
+    c.music_assistant_url = str(c.music_assistant_url);
+    c.music_assistant_token = str(c.music_assistant_token);
+    c.music_assistant_timeout = num(c.music_assistant_timeout, 8, 2, 30);
     c.text_color = color(c.text_color);
     c.highlight_color = color(c.highlight_color);
     return c;
@@ -509,12 +698,16 @@
           duration: Number(a.media_duration) || 0,
           entity: id,
           art: artUrl(a),
+          ma: maTrackRef(a.media_content_id),
           also: []
         };
         groups.set(gk, g);
         order.push(g);
       }
       if (!g.duration && a.media_duration) g.duration = Number(a.media_duration) || 0;
+      // A group can span several players; any of their Music Assistant refs
+      // identifies the same track, so keep the first one we can use.
+      if (!g.ma) g.ma = maTrackRef(a.media_content_id);
       if (g.also.indexOf(id) < 0) g.also.push(id);
     }
     if (this._keys) {
@@ -624,7 +817,12 @@
     }
     var self = this;
     var key = track.k;
-    var rec = force ? undefined : cacheGet(key);
+    var cfg = this.config || {};
+    // Music Assistant and LRCLIB can return different words for the same track,
+    // so keep their cache entries apart. Offsets stay keyed on the track.
+    var useMa = cfg.lyrics_source === 'music_assistant';
+    var lkey = useMa ? key + '|ma' : key;
+    var rec = force ? undefined : cacheGet(lkey);
     if (rec) {
       this.data = rec.d;
       this.msg = rec.d ? '' : 'No lyrics found';
@@ -641,13 +839,11 @@
     this._renderLines(true);
     this._anchor();
     this._update(true);
-    fetchLyrics({
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      duration: track.duration
-    }).then(function (data) {
-      cacheSet(key, data);
+    var request = useMa
+      ? fetchMaLyrics(track.ma, cfg).then(function (d) { return d || fetchLyrics(track); })
+      : fetchLyrics(track);
+    request.then(function (data) {
+      cacheSet(lkey, data);
       if (self.loadedKey !== key || !self._hass) return;
       self.data = data;
       self.msg = data ? '' : 'No lyrics found';

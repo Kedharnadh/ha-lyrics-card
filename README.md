@@ -5,7 +5,7 @@ A single-file Lovelace card that shows lyrics for whatever is playing on any
 API key.
 
 ```
-raw 33.1 KB   ·   gzip 9.7 KB
+raw 40.9 KB   ·   gzip 12.1 KB
 ```
 
 ![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
@@ -86,6 +86,10 @@ the card picker by searching for **Lyrics Card**.
 | `background_veil` | `0.62` | Card-coloured wash over the art (0–1) |
 | `text_color` | theme | Lyric colour as `#rgb` or `#rrggbb` |
 | `highlight_color` | theme | Active-lyric colour as `#rgb` or `#rrggbb` |
+| `lyrics_source` | `lrclib` | `lrclib`, or `music_assistant` to try MA first |
+| `music_assistant_url` | — | MA server, e.g. `http://ma.local:8095` |
+| `music_assistant_token` | — | MA long-lived access token |
+| `music_assistant_timeout` | `8` | Seconds to wait for MA before falling back (2–30) |
 
 `height` defaults to `max_lines × line_height`, so you normally only need it when
 you want a fixed card height. Out-of-range numbers are clamped rather than
@@ -124,6 +128,54 @@ show_friendly_name: false
 
 If the blurred artwork ever fights with the lyrics, raise `background_veil`
 towards `1` (or drop `background_dim` to `0`) to push it further back.
+
+## Lyrics from Music Assistant (optional)
+
+Music Assistant resolves its own synced lyrics and will ask the track's own
+provider first (Bandcamp, OpenSubsonic/Navidrome, and others) before falling back
+to LRCLIB or Genius. Point the card at it and MA is tried before LRCLIB:
+
+```yaml
+type: custom:ha-lyrics-card
+lyrics_source: music_assistant
+music_assistant_url: http://ma.local:8095
+music_assistant_token: !secret ma_lyrics_token
+```
+
+To get a token: in Music Assistant go to **Settings → Users → your user → Access
+tokens → Add token**. It needs the *Library read* scope. Use the user token, not
+the Home Assistant system token — MA rejects the latter on its normal web server.
+
+Everything degrades to LRCLIB automatically, so this is safe to leave on: if MA
+is unreachable, the token is wrong, the track is not a Music Assistant item, or
+MA has no lyrics, the card falls back to LRCLIB for that track. MA and LRCLIB
+results are cached separately, so enabling it never discards lyrics you already
+had.
+
+**Please read this before enabling it.** Home Assistant exposes nothing useful
+here, which is why the card talks to MA directly:
+
+- The MA `media_player` entity has no lyrics attribute, and the
+  `music_assistant` integration registers no websocket commands.
+- The `music_assistant.get_queue` action exists, but its response deliberately
+  omits lyrics.
+
+So the card speaks MA's own websocket API (`metadata/get_track_lyrics`) directly.
+That is an internal MA command with no Home Assistant integration surface and no
+deprecation path — it could change in a future MA release. It is opt-in for that
+reason, and the LRCLIB path remains the default.
+
+Also worth knowing:
+
+- Only tracks that are actual Music Assistant items work, identified from the
+  `provider://media_type/item_id` URI HA puts in `media_content_id`. A plain
+  stream URL or a non-MA player just uses LRCLIB.
+- Spotify and YouTube Music do **not** supply lyrics to Music Assistant, so
+  tracks from those services still resolve through MA's fallback providers —
+  which usually means the same LRCLIB data the card would have fetched anyway.
+  The extra coverage MA adds is mainly Genius and self-hosted OpenSubsonic.
+- Your MA server must be reachable from the browser, and `wss://` is used
+  automatically when the URL is `https://`.
 
 ## Manual installation
 

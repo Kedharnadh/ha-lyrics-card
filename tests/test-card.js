@@ -288,6 +288,104 @@ const flush = () => new Promise((r) => setTimeout(r, 30));
   eq('relative art url accepted', jsArt('/local/cover.png'), '/local/cover.png');
   eq('https art url accepted', jsArt('https://i.example/c.jpg'), 'https://i.example/c.jpg');
 
+  console.log('\nmusic assistant lyrics source');
+
+  const MA_SYNCED = '[00:11.20] Hello from Music Assistant\n[00:16.40] Second line here';
+  const MA_PLAIN = 'Plain line one\nPlain line two';
+
+  function maPlayer(uri) {
+    const st = player('media_player.ma_kitchen', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20);
+    if (uri !== undefined) st.attributes.media_content_id = uri;
+    return st;
+  }
+
+  // Build a card whose only lyric source is MA, returning the card plus the
+  // sockets MA was asked to open.
+  function maCard(cfg, handler, uri) {
+    global.__maSockets = [];
+    global.__maHandler = handler;
+    // Every case below plays the same track, and the card caches per
+    // track+source, so start each one with a cold cache.
+    cache.clear();
+    const card = makeCard(
+      { lyrics_source: 'music_assistant', music_assistant_url: 'http://ma.local:8095', music_assistant_token: 'tok', ...cfg },
+      [[{ track_name: 'Creep' }, CREEP]]
+    );
+    card.hass = hass({ 'media_player.ma_kitchen': maPlayer(uri) });
+    return card;
+  }
+
+  const okHandler = (payload) => (msg) => {
+    if (msg.command === 'auth') return { message_id: msg.message_id, result: { username: 'me' } };
+    return { message_id: msg.message_id, result: payload };
+  };
+
+  // The MA path adds a socket open, two command round trips and (on fallback) a
+  // fetch, so give it a longer settle than the plain LRCLIB cases.
+  const settle = () => new Promise((r) => setTimeout(r, 250));
+
+  let m = maCard({}, okHandler([MA_PLAIN, MA_SYNCED]), 'library://track/12345');
+  await settle();
+  eq('ma lyrics used when source is music_assistant', m.data && m.data.source, 'music_assistant');
+  eq('ma synced lines parsed', m.data && m.data.kind, 'synced');
+  eq('ma first line', m.data && m.data.lines[0].text, 'Hello from Music Assistant');
+  eq('ma opened exactly one socket', global.__maSockets.length, 1);
+  eq('ma socket url', global.__maSockets[0].url, 'ws://ma.local:8095/ws');
+  const cmds = global.__maSockets[0].sent.map((s) => s.command);
+  eq('ma auths before the command', cmds, ['auth', 'metadata/get_track_lyrics']);
+  eq('ma track payload', global.__maSockets[0].sent[1].args.track, {
+    item_id: '12345', provider: 'library', media_type: 'track', uri: 'library://track/12345'
+  });
+
+  m = maCard({}, okHandler([MA_PLAIN, '']), 'library://track/12345');
+  await settle();
+  eq('ma plain-only lyrics become static', m.data && m.data.kind, 'static');
+  eq('ma plain line paced', m.data && m.data.lines[0].text, 'Plain line one');
+
+  m = maCard({}, okHandler([null, null]), 'library://track/12345');
+  await settle();
+  eq('ma empty falls back to lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({}, (msg) => (msg.command === 'auth'
+    ? { message_id: msg.message_id, error_code: 'invalid_token', error_message: 'nope' }
+    : { message_id: msg.message_id, result: [MA_PLAIN, MA_SYNCED] }), 'library://track/12345');
+  await settle();
+  eq('ma auth error falls back to lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({ music_assistant_timeout: 2 }, () => undefined, 'library://track/12345');
+  await new Promise((r) => setTimeout(r, 2800));
+  eq('ma blackholed socket times out into lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({}, (msg, sock) => { if (msg.command === 'auth') sock.close(); }, 'library://track/12345');
+  await settle();
+  eq('ma dropped socket falls back to lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({}, okHandler([MA_PLAIN, MA_SYNCED]), 'https://stream.example/song.mp3');
+  await settle();
+  eq('non-ma uri skips the socket entirely', global.__maSockets.length, 0);
+  eq('non-ma uri falls back to lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({ music_assistant_token: '' }, okHandler([MA_PLAIN, MA_SYNCED]), 'library://track/12345');
+  await settle();
+  eq('missing token skips the socket', global.__maSockets.length, 0);
+  eq('missing token falls back to lrclib', m.data && m.data.source, 'lrclib');
+
+  m = maCard({}, okHandler([MA_PLAIN, MA_SYNCED]), 'spotify:track:4cOdK2wGLETKBW3PvgPWqT');
+  await settle();
+  eq('new-style ma uri accepted', m.data && m.data.source, 'music_assistant');
+  eq('new-style provider parsed', global.__maSockets[0].sent[1].args.track.provider, 'spotify');
+  eq('new-style item id parsed', global.__maSockets[0].sent[1].args.track.item_id, '4cOdK2wGLETKBW3PvgPWqT');
+
+  global.__maHandler = undefined;
+
+  console.log('\nconfig: lyrics source');
+  const src = (v) => makeCard({ lyrics_source: v }, [[{ track_name: 'Creep' }, CREEP]]).config.lyrics_source;
+  eq('default source is lrclib', src(undefined), 'lrclib');
+  eq('nonsense source falls back to lrclib', src('spotify'), 'lrclib');
+  eq('music_assistant kept', src('music_assistant'), 'music_assistant');
+  eq('timeout clamped', makeCard({ music_assistant_timeout: 999 }, []).config.music_assistant_timeout, 30);
+  eq('url trimmed', makeCard({ music_assistant_url: '  http://ma:8095  ' }, []).config.music_assistant_url, 'http://ma:8095');
+
   console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();

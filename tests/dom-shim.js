@@ -97,6 +97,36 @@ function install() {
     removeItem: (k) => store.delete(k)
   };
   global.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+  // WebSocket stand-in for the Music Assistant path. A test sets
+  // global.__maHandler = (msg) => reply, where reply is the object to send back
+  // (return undefined to stay silent, e.g. to simulate a dropped connection).
+  // Every socket built is pushed to global.__maSockets for assertions.
+  global.__maSockets = [];
+  global.WebSocket = class {
+    constructor(url) {
+      this.url = url;
+      this.closed = false;
+      this.sent = [];
+      global.__maSockets.push(this);
+      setTimeout(() => { if (!this.closed && this.onopen) this.onopen(); }, 0);
+    }
+    send(raw) {
+      let msg;
+      try { msg = JSON.parse(raw); } catch (e) { return; }
+      this.sent.push(msg);
+      const reply = global.__maHandler ? global.__maHandler(msg, this) : undefined;
+      if (reply === undefined) return;
+      setTimeout(() => {
+        if (this.closed || !this.onmessage) return;
+        this.onmessage({ data: JSON.stringify(reply) });
+      }, 0);
+    }
+    close() {
+      if (this.closed) return;
+      this.closed = true;
+      if (this.onclose) this.onclose();
+    }
+  };
   return store;
 }
 
