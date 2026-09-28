@@ -17,7 +17,7 @@ global.localStorage = (() => {
 
 eval(src.replace(
   'window.customCards = window.customCards',
-  'window.__x={squash:squash,parseLrc:parseLrc,fillGaps:fillGaps,transferTimings:transferTimings,rank:rank,splitPlain:splitPlain};\n  window.customCards = window.customCards'
+  'window.__x={squash:squash,parseLrc:parseLrc,fillGaps:fillGaps,transferTimings:transferTimings,rank:rank,splitPlain:splitPlain,videoTitle:videoTitle,videoArtist:videoArtist};\n  window.customCards = window.customCards'
 ));
 
 const X = global.window.__x;
@@ -112,6 +112,21 @@ eq('duration mismatch penalised', X.rank({ trackName: 'Creep', artistName: 'Radi
 console.log('\nsplitPlain');
 eq('filters stamps', X.splitPlain('[00:01.00]\nreal line\n\n[00:02.00]\nanother'), ['real line', 'another']);
 eq('trims', X.splitPlain('  a  \n  b '), ['a', 'b']);
+
+console.log('\nvideoTitle / videoArtist');
+eq('official video', X.videoTitle('Song Name (Official Video)'), 'Song Name');
+eq('official audio', X.videoTitle('Song Name (Official Audio)'), 'Song Name');
+eq('lyric video', X.videoTitle('Song Name (Official Lyric Video)'), 'Song Name');
+eq('square bracket', X.videoTitle('Song Name [Official Lyric Video]'), 'Song Name');
+eq('dash suffix', X.videoTitle('Song Name - Official Audio'), 'Song Name');
+eq('bare audio suffix', X.videoTitle('Song Name (Audio)'), 'Song Name');
+eq('explicit tag', X.videoTitle('Song Name (Explicit)'), 'Song Name');
+eq('no tag untouched', X.videoTitle('Song Name'), 'Song Name');
+eq('topic artist dropped', X.videoArtist('Artist - Topic'), 'Artist');
+eq('vevo artist dropped', X.videoArtist('Artist - Vevo'), 'Artist');
+eq('youtube alone dropped', X.videoArtist('YouTube'), '');
+eq('yt alone dropped', X.videoArtist('yt'), '');
+eq('channel kept', X.videoArtist('Some Channel'), 'Some Channel');
 
 console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

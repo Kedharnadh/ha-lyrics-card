@@ -1,31 +1,45 @@
-# Lyrics Card for Home Assistant
+# Now Playing & Lyrics Card
 
-A single-file Lovelace card that shows lyrics for whatever is playing on any
-`media_player`, synced to playback. No custom integration, no dependencies, no
+A single-file Lovelace card that shows what's playing and its lyrics — synced to
+playback — with media controls built in. It replaces the common two-card setup
+(a "now playing" card plus a lyrics card) with one card that autodetects any
+`media_player` on the dashboard. No custom integration, no dependencies, no
 API key.
 
 ```
-raw 46.4 KB   ·   gzip 13.8 KB
+raw 79.4 KB   ·   gzip ~23 KB
 ```
 
 ![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
 
 ## Features
 
-- **Any source.** Looks up `media_title` + `media_artist` + `media_album` on
+- **Any source, any player.** Picks up every `media_player` in `playing` or
+  `paused` state with a `media_title` — you don't even have to configure an
+  entity. Looks up `media_title` + `media_artist` + `media_album` on
   [LRCLIB](https://lrclib.net), a free, no-auth, CORS-open lyrics database.
   Falls back to `/api/search` when the exact match misses, so slightly wrong
   metadata (missing album, `feat.` suffixes, live versions) still resolves.
+- **YouTube-style titles.** Cast and Google TV devices report titles like
+  `Creep (Official Video)`. Those suffixes are stripped before the lookup so the
+  actual song still gets found.
 - **Synced when available.** Parses LRC timestamps and highlights the current
   line, scrolling it to centre.
 - **Static when not.** If the best match has plain lyrics but no timestamps, it
   looks for a *different release of the same song* that does have them, matches
   the text line by line, and transfers the timings across. If that fails it
   paces the lines at a readable rate.
+- **Media controls, gated by what the player supports.** Play/pause, next,
+  previous, mute, a volume slider (debounced), and an optional power button.
+  Buttons only appear when the player's `supported_features` say they work —
+  the volume slider becomes `+`/`−` buttons for players that only support
+  stepping.
+- **Seek.** A progress bar under the lyrics; drag anywhere on it to jump and it
+  issues `media_seek`.
 - **No duplicate lyrics.** Two devices playing the same track are grouped into
   one entry. The header shows `Living Room +1` to tell you it's shared.
 - **Swipe when tracks differ.** Different tracks become dots in the header.
-  Swipe the lyrics horizontally, tap the dots, or tap the card to cycle.
+  Swipe left/right to switch, or tap the card.
 - **Instant.** No polling. It reads state HA already streams over the existing
   websocket and interpolates the play position with a local clock, so the
   highlight is smooth at 5 Hz without a single extra API call.
@@ -34,9 +48,10 @@ raw 46.4 KB   ·   gzip 13.8 KB
   never re-fetched.
 - **Album art and blurred backdrop.** If the player reports a picture, it becomes
   the card's background, blurred and dimmed behind a veil so the lyrics stay
-  readable. Turn it off with `show_album_art: false`.
-- **Make it yours.** Card height, font size, line height, alignment, colours,
-  art size, blur strength and dimming are all configurable — see [Options](#options).
+  readable. Adaptive contrast picks a light or dark text colour off the artwork
+  automatically.
+- **Make it yours.** Five layouts, header styles, card height, fonts, colours,
+  art size, blur and dimming are all configurable — see [Options](#options).
 
 ## Installation (HACS)
 
@@ -46,7 +61,7 @@ raw 46.4 KB   ·   gzip 13.8 KB
    `filename`, so the file name must stay `ha-lyrics-card.js`.
 3. HACS → **Dashboard** → ⋮ → **Custom repositories** → add
    `https://github.com/Kedharnadh/ha-lyrics-card` with category **Dashboard**.
-4. Search HACS for **Lyrics Card** → **Download**.
+4. Search HACS for **Now Playing & Lyrics Card** → **Download**.
 5. **Settings → Dashboards → Resources** and add, if HACS didn't already:
 
    | | |
@@ -62,40 +77,73 @@ raw 46.4 KB   ·   gzip 13.8 KB
 type: custom:ha-lyrics-card
 ```
 
-It picks up every playing `media_player` automatically. You can also add it from
-the card picker by searching for **Lyrics Card**.
+That's it. It picks up every playing or paused `media_player` automatically and
+shows a "nothing playing" state when there's nothing to show. You can add it
+from the card picker by searching for **Now Playing & Lyrics Card**.
 
 ### Options
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `entities` | all `media_player`s | Restrict to specific players |
-| `max_lines` | `7` | Visible line height, in lines |
-| `font_size` | `28` | Lyric font size in px |
+| `entity` / `entities` | all `media_player`s | Restrict to specific players |
+| `layout` | `focus` | `focus`, `two_line`, `compact`, `minimal` or `karaoke` |
+| `max_lines` | `7` | Visible lyric lines |
+| `font_size` | `26` | Lyric font size in px |
+| `font_family` | `system-ui` | Lyric font family |
+| `font_weight` | `700` | Lyric font weight |
 | `line_height` | `38` | Line box height in px — raise this if lines wrap |
-| `height` | auto | Card height in px (60–1600). Overrides `max_lines` |
-| `align` | `center` | Lyric alignment: `left`, `center` or `right` |
+| `card_height` | auto | Card height, e.g. `260px`, `65vh` |
+| `height` | auto | Numeric card height in px (60–1600). Overrides `max_lines` |
+| `align` / `alignment` | `center` | Lyric alignment: `left`, `center` or `right` |
+| `active_scale` | `1.12` | Scale of the active lyric line |
+| `inactive_opacity` | `0.35` | Opacity of non-active lines |
 | `smooth` | `true` | Smooth scroll to the active line |
-| `show_progress` | `true` | Thin progress bar under the lyrics |
-| `show_header` | `true` | Show the track header |
+| `show_intro` | `true` | Show a track-info splash before the first lyric |
+| `intro_duration` | `3` | Minimum intro length in seconds |
+| `intro_font_size` | `48` | Intro splash font size in px |
+| `show_sync_slider` | `true` | On-card sync offset slider |
+| `sync_offset` | `0` | Starting sync offset in seconds (clamped ±120) |
+| `show_track_info` | `true` | Show track title/artist in the header |
 | `show_friendly_name` | `true` | Prefix the header with the player name |
-| `show_album_art` | `true` | Show album art and the blurred backdrop |
+| `show_header` | `true` | Show the track header at all |
+| `header_layout` | `combined` | `combined`, `split` or `split_reverse` |
+| `header_font_size` | `0` | Header font size (0 = inherit) |
+| `header_alignment` | `inherit` | Header text alignment |
+| `track_info_font_size` | `13` | Title/artist subtitle size in px |
+| `show_media_controls` | `true` | Show the player control buttons |
+| `media_controls_size` | `30` | Control button size in px |
+| `media_icon_style` | `standard` | `standard`, `filled` or `minimal` glyphs |
+| `show_volume` | `true` | Volume slider (or `+`/`−` when unsupported) |
+| `show_mute` | `true` | Mute button |
+| `show_power` | `false` | Power (toggle) button |
+| `show_progress` | `true` | Progress bar with seek support |
+| `background_mode` | `artwork` | `artwork`, `theme` or `transparent` |
+| `background_opacity` | `1` | Card backdrop opacity (0–1) |
+| `show_album_art` | `true` | Show album art in the header |
 | `art_size` | `42` | Album art size in px (0–200) |
-| `background_blur` | `18` | Backdrop blur in px (0–80) |
-| `background_dim` | `0.34` | How strongly the art shows through (0–1) |
-| `background_veil` | `0.62` | Card-coloured wash over the art (0–1) |
+| `artwork_blur` | `14` | Backdrop blur in px (0–80) |
+| `artwork_opacity` | `1` | How strongly the art shows through (0–1) |
+| `artwork_overlay_opacity` | `0.4` | Dark wash over the art (0–1) |
+| `backdrop_blur` | `10` | Additional backdrop blur in px |
+| `backdrop_opacity` | `0.22` | Additional backdrop opacity (0–1) |
+| `contrast_mode` | `adaptive` | `adaptive` picks text colour from the artwork, `off` disables |
+| `text_color_mode` | `auto` | `auto`, `theme`, `light` or `dark` |
 | `text_color` | theme | Lyric colour as `#rgb` or `#rrggbb` |
 | `highlight_color` | theme | Active-lyric colour as `#rgb` or `#rrggbb` |
+| `text_shadow` | `true` | Outline/shadow under the lyrics |
+| `text_shadow_strength` | `0.6` | Text shadow strength |
+| `plain_lyrics_auto_scroll` | `true` | Auto-scroll plain lyrics with playback position |
+| `static_font_size` | `18` | Font size for plain lyrics in px (10–48) |
+| `static_scroll` | `true` | Drift plain lyrics up slowly when nothing else knows the timing |
+| `static_scroll_speed` | `14` | Drift speed in px per second (4–60) |
 | `lyrics_source` | `lrclib` | `lrclib`, or `music_assistant` to try MA first |
 | `music_assistant_url` | — | MA server, e.g. `http://ma.local:8095` |
 | `music_assistant_token` | — | MA long-lived access token |
 | `music_assistant_timeout` | `8` | Seconds to wait for MA before falling back (2–30) |
-| `static_scroll` | `true` | Drift unsynced lyrics up slowly instead of faking a highlight |
-| `static_font_size` | `18` | Font size for unsynced lyrics in px (10–48) |
-| `static_scroll_speed` | `14` | Drift speed in px per second (4–60) |
 
-`height` defaults to `max_lines × line_height`, so you normally only need it when
-you want a fixed card height. Out-of-range numbers are clamped rather than
+Legacy names `background_blur`/`background_dim`/`background_veil` (and `align`,
+`show_progress`) still work as aliases for `artwork_blur`/`artwork_opacity`/
+`artwork_overlay_opacity`. Out-of-range numbers are clamped rather than
 rejected, and an unparseable colour falls back to your theme.
 
 Album art is read from whichever of `entity_picture`, `media_image_url`,
@@ -103,14 +151,51 @@ Album art is read from whichever of `entity_picture`, `media_image_url`,
 `http(s)` and root-relative URLs are used, so a hostile entity can't smuggle a
 `javascript:` or `data:` URL into the card.
 
+### Layouts
+
+- `focus` — one large active line, surrounding lines see-through.
+- `two_line` — the active line and the next one both full opacity.
+- `compact` — smaller active line, tighter spacing.
+- `minimal` — lyrics only, no header.
+- `karaoke` — shows three lines with the next line emphasised.
+
+`height` / `card_height` set a fixed card height and are clamped; otherwise the
+card sizes itself from `max_lines × line_height`.
+
+### Media controls
+
+Controls appear in the header and are gated by the player's
+`supported_features`, so a Chromecast with volume buttons but no seek won't show
+a broken slider. Volume input is debounced (150 ms) before `volume_set` is sent,
+so dragging the slider doesn't spam the bus. Mute and power mirror the current
+device state.
+
+```yaml
+type: custom:ha-lyrics-card
+entity: media_player.spotify
+show_power: true
+media_icon_style: filled
+```
+
+### Keeping a track in sync
+
+When a track's lyrics are a few seconds off, use the on-card `+`/`−` slider
+(enable with `show_sync_slider`) or set `sync_offset` once in YAML. Offsets are
+remembered per track in `localStorage`; `↺` resets them. The offset counts
+towards the local clock used to pick the active line, so it stays smooth.
+
+```yaml
+type: custom:ha-lyrics-card
+sync_offset: -1.5
+```
+
 ### Unsynced lyrics
 
-Plenty of tracks have plain lyrics with no timings. Highlighting one line at a
-time would mean inventing them, so instead the whole lyric block is set in one
-smaller font (`static_font_size`) and drifts slowly upward at
-`static_scroll_speed` px per second, rests on the last line, then loops. It
-keeps drifting whatever the playback state — a paused track is usually just
-paused, not finished.
+Plenty of tracks have plain lyrics with no timings. By default the card
+auto-scrolls them with playback when the player reports a duration
+(`plain_lyrics_auto_scroll`), and drifts the block upward at
+`static_scroll_speed` px per second otherwise, resting on the last line before
+looping.
 
 - Scrolling by hand parks it for a few seconds so you can actually read a line.
 - `prefers-reduced-motion` is honoured: no drift, the block sits centred and you
@@ -128,29 +213,30 @@ type: custom:ha-lyrics-card
 entities:
   - media_player.spotify
   - media_player.living_room_tv
-max_lines: 5
-font_size: 32
-line_height: 44
+layout: two_line
+card_height: 320px
+font_size: 30
+line_height: 42
 ```
 
 ### A themed, left-aligned card
 
 ```yaml
 type: custom:ha-lyrics-card
-height: 320
+card_height: 320px
 align: left
 font_size: 30
 text_color: "#f2e9dc"
 highlight_color: "#ffb703"
 art_size: 56
-background_blur: 26
-background_dim: 0.45
-background_veil: 0.55
+artwork_blur: 26
+artwork_overlay_opacity: 0.55
 show_friendly_name: false
 ```
 
-If the blurred artwork ever fights with the lyrics, raise `background_veil`
-towards `1` (or drop `background_dim` to `0`) to push it further back.
+If the blurred artwork ever fights with the lyrics, raise
+`artwork_overlay_opacity` towards `1` (or drop `artwork_opacity` to `0`) to push
+it further back.
 
 ## Lyrics from Music Assistant (optional)
 
@@ -206,16 +292,6 @@ Copy `ha-lyrics-card.js` into `config/www/`, add
 `/local/ha-lyrics-card.js` as a **JavaScript module** resource, then use
 `type: custom:ha-lyrics-card`.
 
-## Nudging static lyrics
-
-When timings are estimated rather than real, a small control row appears at the
-bottom right: `−  +0s  +  ↺  ⟳`.
-
-- `−` / `+` shift the lyrics by a second. Hold to repeat, or scroll over the
-  number. Adjustments are remembered per track.
-- `↺` resets the shift.
-- `⟳` clears the cache and re-fetches, in case lyrics were added upstream.
-
 ## Development / CI
 
 - `.github/workflows/hacs.yaml` runs [HACS validation](https://github.com/hacs/action)
@@ -226,8 +302,9 @@ bottom right: `−  +0s  +  ↺  ⟳`.
 - Tests are plain Node scripts, no dependencies:
 
   ```
+  node --check ha-lyrics-card.js
   node tests/test-logic.js      # LRC parsing, gap filling, timing transfer
-  node tests/test-card.js       # grouping, dedupe, swipe, line sync, options
+  node tests/test-card.js       # grouping, dedupe, swipe, line sync, controls, options
   node tests/test-degenerate.js # empty/degenerate hass, HA preview behaviour
   node tests/test-live.js       # end-to-end against the real LRCLIB API
   ```

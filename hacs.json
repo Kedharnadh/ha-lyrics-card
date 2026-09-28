@@ -1,5 +1,5 @@
 {
-  "name": "Lyrics Card",
+  "name": "Now Playing & Lyrics Card",
   "render_readme": true,
   "filename": "ha-lyrics-card.js",
   "homeassistant": "2024.1.0",

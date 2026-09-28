@@ -48,6 +48,12 @@ function report(label, data, wantKind) {
 
   await new Promise((r) => setTimeout(r, 1200));
 
+  report('TV/music-video style title (cleaned for search)',
+    await fetchLyrics({ title: 'Creep (Official Video)', artist: 'Radiohead - Topic', album: '', duration: 0 }),
+    'synced');
+
+  await new Promise((r) => setTimeout(r, 1200));
+
   report('obscure nonsense track (expect no lyrics)',
     await fetchLyrics({ title: 'zzqx nonexistent tune 4471', artist: 'nobody at all', album: '', duration: 200 }),
     null);

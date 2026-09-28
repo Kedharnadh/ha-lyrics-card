@@ -50,12 +50,29 @@ class El {
   _walk(fn) { for (const c of this.children) if (c instanceof El) { fn(c); c._walk(fn); } }
   _matches(sel) {
     if (sel[0] === '.') return this._cls().includes(sel.slice(1));
-    if (sel[0] === '[') return sel.includes('data-act') ? this.dataset.act !== undefined : true;
+    if (sel[0] === '[') {
+      const m = /^\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(sel);
+      if (!m) return false;
+      const v = this.dataset[m[1].replace(/^data-/, '')];
+      if (m[2] === undefined) return v !== undefined;
+      return v === m[2];
+    }
     return this.tagName === sel;
+  }
+  _selMatch(parts, i) {
+    if (i < 0) return true;
+    if (!this._matches(parts[i])) return false;
+    if (i === 0) return true;
+    let a = this.parentNode;
+    while (a) {
+      if (a._selMatch(parts, i - 1)) return true;
+      a = a.parentNode;
+    }
+    return false;
   }
   querySelector(sel) {
     const parts = sel.trim().split(/\s+/); let found = null;
-    this._walk((c) => { if (!found && c._matches(parts[parts.length - 1])) found = c; });
+    this._walk((c) => { if (!found && c._selMatch(parts, parts.length - 1)) found = c; });
     return found;
   }
   closest(sel) { let n = this; while (n) { if (n._matches && n._matches(sel)) return n; n = n.parentNode; } return null; }
@@ -83,9 +100,16 @@ function parseInto(root, html) {
     const top = stack[stack.length - 1];
     if (m[3] !== undefined) { const t = m[3].trim(); if (t && top.tagName !== 'style') top._txt += t; continue; }
     if (m[0][1] === '/') { if (stack.length > 1) stack.pop(); continue; }
-    const cls = /class="([^"]*)"/.exec(m[2] || '');
     const el = new El(m[1]);
-    if (cls) el.className = cls[1];
+    const attrs = /([a-z-]+)="([^"]*)"/gi;
+    let a;
+    while ((a = attrs.exec(m[2] || ''))) {
+      const n = a[1].toLowerCase();
+      if (n === 'class') el.className = a[2];
+      else if (n.indexOf('data-') === 0) el.dataset[n.slice(5)] = a[2];
+      else if (n === 'value') el.value = a[2];
+      else if (n === 'src') el.src = a[2];
+    }
     top.appendChild(el);
     if (!m[0].endsWith('/>') && !VOID.has(m[1].toLowerCase())) stack.push(el);
   }
@@ -94,20 +118,29 @@ function parseInto(root, html) {
 // Installs the globals the card expects. Returns the localStorage backing map.
 function install() {
   const store = new Map();
-  global.HTMLElement = class {
-    constructor() { this.style = new Style(); }
+  global.HTMLElement = class extends El {
+    constructor() { super('ha-el'); }
     attachShadow() { const r = new El('shadow'); this.root = r; return r; }
   };
   global.document = {
     createElement: (t) => new El(t),
     createDocumentFragment: () => new El('#frag')
   };
-  global.customElements = { get: () => false, define: (t, c) => { global.Card = c; } };
+  const defs = {};
+  global.customElements = {
+    get: (t) => (defs[t] || false),
+    define: (t, c) => { defs[t] = c; global.Card = defs['ha-lyrics-card']; }
+  };
   global.window = { customCards: [], matchMedia: () => ({ matches: global.__reducedMotion === true }) };
   global.localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
     removeItem: (k) => store.delete(k)
+  };
+  global.Image = class {
+    constructor() { this.onload = null; this.onerror = null; this._s = ''; }
+    set src(v) { this._s = v; }
+    get src() { return this._s; }
   };
   // requestAnimationFrame.
 //

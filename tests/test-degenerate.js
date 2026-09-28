@@ -73,12 +73,13 @@ t('no media_player at all says so explicitly', () => {
   if (c.el.sub.textContent !== 'No media players found') throw new Error('got: ' + c.el.sub.textContent);
 });
 
-t('media_player present but paused says Nothing playing', () => {
+t('media_player present but paused is collected and shown', () => {
   const c = new global.Card();
   c.setConfig({});
   c.connectedCallback();
-  c.hass = { states: { 'media_player.tv': { state: 'paused', attributes: { media_title: 'Creep' } } } };
-  if (c.el.sub.textContent !== 'Nothing playing') throw new Error('got: ' + c.el.sub.textContent);
+  c.hass = { states: { 'media_player.tv': { state: 'paused', attributes: { media_title: 'Creep', media_artist: 'Radiohead', media_duration: 239, media_position: 120 } } } };
+  if (c._keys.length !== 1) throw new Error('keys: ' + c._keys.length);
+  if (c.el.title.textContent !== 'Creep') throw new Error('title: ' + c.el.title.textContent);
 });
 
 t('media_player playing but no media_title', () => {
@@ -86,6 +87,7 @@ t('media_player playing but no media_title', () => {
   c.setConfig({});
   c.connectedCallback();
   c.hass = { states: { 'media_player.radio': { state: 'playing', attributes: {} } } };
+  if (c._keys.length !== 0) throw new Error('keys: ' + c._keys.length);
   if (c.el.sub.textContent !== 'Nothing playing') throw new Error('got: ' + c.el.sub.textContent);
 });
 
