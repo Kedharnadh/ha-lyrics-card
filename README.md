@@ -7,7 +7,7 @@ playback — with media controls built in. It replaces the common two-card setup
 API key.
 
 ```
-raw 79.4 KB   ·   gzip ~23 KB
+raw 82.1 KB   ·   gzip ~21 KB
 ```
 
 ![Lyrics card: synced lyrics on the left, static lyrics with manual offset controls on the right](docs/card.png)
@@ -112,7 +112,6 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `track_info_font_size` | `13` | Title/artist subtitle size in px |
 | `show_media_controls` | `true` | Show the player control buttons |
 | `media_controls_size` | `30` | Control button size in px |
-| `media_icon_style` | `standard` | `standard`, `filled` or `minimal` glyphs |
 | `show_volume` | `true` | Volume slider (or `+`/`−` when unsupported) |
 | `show_mute` | `true` | Mute button |
 | `show_power` | `false` | Power (toggle) button |
@@ -174,7 +173,6 @@ device state.
 type: custom:ha-lyrics-card
 entity: media_player.spotify
 show_power: true
-media_icon_style: filled
 ```
 
 ### Keeping a track in sync

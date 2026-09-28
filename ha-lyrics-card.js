@@ -459,7 +459,6 @@
     header_layout: 'combined',
     show_media_controls: true,
     media_controls_size: 30,
-    media_icon_style: 'standard',
     show_progress: true,
     show_volume: true,
     show_mute: true,
@@ -581,7 +580,6 @@
     c.header_layout = ['combined', 'split', 'split_reverse'].indexOf(c.header_layout) >= 0 ? c.header_layout : 'combined';
     c.show_media_controls = bool(c.show_media_controls, true);
     c.media_controls_size = Math.round(num(c.media_controls_size, 30, 24, 64));
-    c.media_icon_style = ['standard', 'filled', 'minimal'].indexOf(c.media_icon_style) >= 0 ? c.media_icon_style : 'standard';
     c.show_progress = bool(c.show_progress_bar != null ? c.show_progress_bar : c.show_progress, true);
     c.progress_bar_height = Math.round(num(c.progress_bar_height, 5, 2, 16));
     c.progress_bar_color = cssSafe(c.progress_bar_color || 'var(--primary-color)');
@@ -623,7 +621,7 @@
   var STYLE = [
     ':host{display:block}',
     '*{box-sizing:border-box}',
-    'ha-card{position:relative;isolation:isolate;display:block;box-shadow:none;border-radius:14px;padding:10px 12px 8px;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#1c1c1e))}',
+    'ha-card{position:relative;isolation:isolate;display:block;box-shadow:none;border-radius:16px;padding:10px 12px 8px;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#1c1c1e))}',
     ':host{--fb:26px;--lb:38px;--fw:700;--ff:system-ui;--al:center;--as:1.12;--io:.35;--npc-ts:none;--bg-blur:14px;--bg-dim:1;--bg-veil:.4;--bb:10px;--bo:.22;--art-size:42px;--static-size:18px;--th:13px;--seek-h:5px;--seek-c:var(--primary-color);--ctrl:30px;--ha-lyrics-primary:var(--primary-text-color,#e1e1e1);--ha-lyrics-secondary:var(--secondary-text-color,#9b9b9b);--ha-lyrics-accent:var(--primary-color,#03a9f4)}',
     '.bg{position:absolute;z-index:0;inset:calc(-1 * var(--bg-blur) - 16px);background-size:cover;background-position:center;filter:blur(var(--bg-blur));opacity:var(--bg-dim);pointer-events:none}',
     '.bg[hidden]{display:none}',
@@ -653,6 +651,7 @@
     '.controls[hidden]{display:none}',
     '.cb{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:var(--ctrl);height:var(--ctrl);min-width:0;border-radius:8px;color:var(--ha-lyrics-primary,#e1e1e1);font-size:calc(var(--ctrl) * .72);line-height:1;user-select:none;-webkit-tap-highlight-color:transparent}',
     '.cb:hover{background:var(--secondary-background-color,#8883)}',
+    '.cb svg{display:block;width:calc(var(--ctrl) * .62);height:calc(var(--ctrl) * .62)}',
     '.cb:disabled{opacity:.28;cursor:default;background:none}',
     '.cb.playing{color:var(--ha-lyrics-accent)}',
     '.vol{flex:0 1 140px;display:flex;align-items:center;gap:6px;min-width:0;margin:0 4px;margin-left:auto}',
@@ -661,7 +660,8 @@
     '.vol .vlab{font-size:12px;color:var(--ha-lyrics-secondary,#9b9b9b);min-width:32px;text-align:right;font-variant-numeric:tabular-nums}',
     '.vstep{all:unset;cursor:pointer;color:var(--ha-lyrics-primary,#e1e1e1);font-size:calc(var(--ctrl) * .6);padding:2px 10px;border-radius:6px}',
     '.vstep:hover{background:var(--secondary-background-color,#8883)}',
-    '.seek{position:relative;display:flex;align-items:center;gap:8px;margin-top:8px}',
+    '.vstep svg{display:block;width:calc(var(--ctrl) * .55);height:calc(var(--ctrl) * .55)}',
+    '.seek{position:relative;display:flex;align-items:center;gap:8px;margin:10px -12px calc(-8px);padding:0 12px;border-top:1px solid rgba(127,127,127,.15)}',
     '.seek[hidden]{display:none}',
     '.track{position:relative;flex:1;height:var(--seek-h);border-radius:99px;background:var(--divider-color,rgba(127,127,127,.3));cursor:pointer;overflow:hidden}',
     '.track i{display:block;height:100%;background:var(--seek-c);border-radius:99px;width:0}',
@@ -730,10 +730,20 @@
     '</ha-card>'
   ].join('\n');
 
-  function glyphs(style) {
-    if (style === 'filled') return { prev: '\u23ee', play: '\u25b6', pause: '\u23f8', next: '\u23ed', power: '\u23fb' };
-    if (style === 'minimal') return { prev: '\u00ab', play: '\u25ba', pause: '\u275a\u275a', next: '\u00bb', power: '\u23fb' };
-    return { prev: '\u2778\u2778', play: '\u25b6', pause: '\u275a\u275a', next: '\u2779\u2779', power: '\u23fb' };
+  var ICONS = {
+    play: 'M8,5.14V19.14L19,12.14L8,5.14Z',
+    pause: 'M14,19H18V5H14M6,19H10V5H6V19Z',
+    prev: 'M6,18V6H8V18H6M9.5,12L18,6V18L9.5,12Z',
+    next: 'M16,18H18V6H16M6,18L14.5,12L6,6V18Z',
+    power: 'M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12C20,9.28 18.64,6.88 16.56,5.44M13,3H11V13H13',
+    volHigh: 'M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z',
+    volOff: 'M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z',
+    volDown: 'M3,9H7L12,4V20L7,15H3V9M14,11H22V13H14V11Z',
+    volUp: 'M3,9H7L12,4V20L7,15H3V9M14,11H17V8H19V11H22V13H19V16H17V13H14V11Z'
+  };
+
+  function ico(name) {
+    return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="' + ICONS[name] + '"></path></svg>';
   }
 
   class HaLyricsCard extends HTMLElement {
@@ -1162,7 +1172,7 @@
       var vol = hasVol ? Math.round(Math.max(0, Math.min(1, Number(a.volume_level))) * 100) : -1;
       var volMode = (c.show_volume && (f & F_VOLUME_SET)) || (c.show_volume && hasVol) ? 'slider' : (c.show_volume && (f & F_VOLUME_STEP)) ? 'step' : '';
       var sig = [
-        track.entity, f, c.media_icon_style, c.show_media_controls, c.show_volume, c.show_mute, c.show_power,
+        track.entity, f, c.show_media_controls, c.show_volume, c.show_mute, c.show_power,
         c.show_progress, c.layout, c.media_controls_size,
         playing ? 'p' : isPaused ? 'z' : 'o', muted ? 'm' : '', volMode, vol
       ].join('|');
@@ -1171,23 +1181,22 @@
         return;
       }
       this._ctlSig = sig;
-      var g = glyphs(c.media_icon_style);
       var html = '';
       if (c.show_mute && (f & F_VOLUME_MUTE)) {
-        html += '<button class="cb" data-c="mute" title="Mute">' + (muted ? '\ud83d\udd07' : '\ud83d\udd0a') + '</button>';
+        html += '<button class="cb" data-c="mute" title="Mute">' + ico(muted ? 'volOff' : 'volHigh') + '</button>';
       }
-      html += '<button class="cb" data-c="prev" title="Previous"' + ((f & F_PREV) ? '' : ' disabled') + '>' + g.prev + '</button>';
-      html += '<button class="cb' + (playing ? ' playing' : '') + '" data-c="toggle" title="Play/Pause">' + (playing ? g.pause : g.play) + '</button>';
-      html += '<button class="cb" data-c="next" title="Next"' + ((f & F_NEXT) ? '' : ' disabled') + '>' + g.next + '</button>';
+      html += '<button class="cb" data-c="prev" title="Previous"' + ((f & F_PREV) ? '' : ' disabled') + '>' + ico('prev') + '</button>';
+      html += '<button class="cb' + (playing ? ' playing' : '') + '" data-c="toggle" title="Play/Pause">' + ico(playing ? 'pause' : 'play') + '</button>';
+      html += '<button class="cb" data-c="next" title="Next"' + ((f & F_NEXT) ? '' : ' disabled') + '>' + ico('next') + '</button>';
       if (volMode === 'slider') {
         html += '<div class="vol"><input type="range" min="0" max="100" step="1" value="' + Math.max(0, vol) + '"><span class="vlab">' + Math.max(0, vol) + '%</span></div>';
       } else if (volMode === 'step') {
-        html += '<div class="vol"><button class="vstep" data-c="v-" title="Volume down">\u2212</button><button class="vstep" data-c="v+" title="Volume up">+</button></div>';
+        html += '<div class="vol"><button class="vstep" data-c="v-" title="Volume down">' + ico('volDown') + '</button><button class="vstep" data-c="v+" title="Volume up">' + ico('volUp') + '</button></div>';
       } else {
         html += '<div class="vol" hidden></div>';
       }
       if (c.show_power && ((f & F_TURN_ON) || (f & F_TURN_OFF))) {
-        html += '<button class="cb" data-c="power" title="Power">' + g.power + '</button>';
+        html += '<button class="cb" data-c="power" title="Power">' + ico('power') + '</button>';
       }
       e.controls.hidden = false;
       e.controls.innerHTML = html;
@@ -1199,11 +1208,10 @@
 
     _paintControls(track, st, playing, muted, vol, volMode) {
       var e = this.el;
-      var g = glyphs(this.config.media_icon_style);
       var toggle = e.controls.querySelector('[data-c="toggle"]');
       if (toggle) {
         toggle.classList.toggle('playing', playing);
-        toggle.textContent = playing ? g.pause : g.play;
+        toggle.innerHTML = ico(playing ? 'pause' : 'play');
       }
       if (volMode === 'slider' && vol >= 0) {
         var inp = e.controls.querySelector('.vol input');
@@ -1214,7 +1222,7 @@
         if (lab) lab.textContent = vol + '%';
       }
       var mute = e.controls.querySelector('[data-c="mute"]');
-      if (mute) mute.textContent = muted ? '\ud83d\udd07' : '\ud83d\udd0a';
+      if (mute) mute.innerHTML = ico(muted ? 'volOff' : 'volHigh');
     }
 
     _dur() {
@@ -1766,7 +1774,6 @@
         ['Media controls', [
           { name: 'show_media_controls', selector: { boolean: { } } },
           { name: 'media_controls_size', selector: { number: { min: 24, max: 64, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
-          { name: 'media_icon_style', selector: { select: { mode: 'dropdown', options: [{ label: 'Standard', value: 'standard' }, { label: 'Filled media icons', value: 'filled' }, { label: 'Minimal chevrons', value: 'minimal' }] } } },
           { name: 'show_volume', selector: { boolean: { } } },
           { name: 'show_mute', selector: { boolean: { } } },
           { name: 'show_power', selector: { boolean: { } } },
@@ -1836,7 +1843,7 @@
         entity: 'Media player', entities: 'Media players', layout: 'Layout', card_height: 'Card height (e.g. 260px, 65vh)',
         height: 'Card height (px)', show_track_info: 'Show track title and artist', show_friendly_name: 'Show player name',
         show_intro: 'Show track intro before first lyric', intro_duration: 'Minimum intro duration', intro_font_size: 'Intro title size',
-        show_media_controls: 'Show player controls', media_controls_size: 'Control button size', media_icon_style: 'Icon style',
+        show_media_controls: 'Show player controls', media_controls_size: 'Control button size',
         show_volume: 'Volume control', show_mute: 'Mute button', show_power: 'Power button',
         show_progress: 'Show progress / seek bar', progress_bar_height: 'Progress bar height', progress_bar_color: 'Progress bar colour (CSS)',
         alignment: 'Lyrics alignment', font_family: 'Lyrics font', font_size: 'Lyrics font size', font_weight: 'Lyrics font weight',
