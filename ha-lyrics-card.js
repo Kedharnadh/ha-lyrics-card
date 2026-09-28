@@ -9,6 +9,7 @@
   var TTL_MISS = 864e5;
   var TICK = 200;
   var SWIPE_PX = 42;
+  var SYNC_STEP = 0.5;
   var READ_PACE = 4.5;
   var LRC_RE = /\[(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?\]/g;
   var DIACRITICS = /[\u0300-\u036f]/g;
@@ -707,10 +708,12 @@
     '    <div class="foot">',
     '      <div class="status"></div>',
     '      <div class="sync">',
-    '        <span class="sl">Sync</span>',
-    '        <input type="range" min="-10" max="10" step="0.01">',
-    '        <button data-c="syncreset" title="Reset offset">Reset</button>',
-    '        <span class="sv"></span>',
+'        <span class="sl">Sync</span>',
+'        <button data-c="sync-" title="Offset \u22120.5s">\u2212</button>',
+'        <input type="range" min="-10" max="10" step="0.01">',
+'        <button data-c="sync+" title="Offset +0.5s">+</button>',
+'        <button data-c="syncreset" title="Reset offset">Reset</button>',
+'        <span class="sv"></span>',
     '      </div>',
     '    </div>',
     '    <div class="controls" hidden>',
@@ -1617,6 +1620,14 @@
         case 'v-': this._callSvc('volume_down'); break;
         case 'v+': this._callSvc('volume_up'); break;
         case 'syncreset': this._setOffset(0); break;
+        case 'sync-':
+          this._pokeSync();
+          this._setOffset((this.offset || 0) - SYNC_STEP);
+          break;
+        case 'sync+':
+          this._pokeSync();
+          this._setOffset((this.offset || 0) + SYNC_STEP);
+          break;
       }
     }
 

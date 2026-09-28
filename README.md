@@ -177,10 +177,12 @@ show_power: true
 
 ### Keeping a track in sync
 
-When a track's lyrics are a few seconds off, use the on-card `+`/`−` slider
-(enable with `show_sync_slider`) or set `sync_offset` once in YAML. Offsets are
-remembered per track in `localStorage`; `↺` resets them. The offset counts
-towards the local clock used to pick the active line, so it stays smooth.
+When a track's lyrics are a few seconds off, use the on-card `Sync` toolbar:
+the `−`/`+` buttons adjust the offset in 0.5 s steps, with the slider for
+fine-tuning (enable the toolbar with `show_sync_slider`); or set `sync_offset`
+once in YAML. Offsets are remembered per track in `localStorage`; `Reset`
+clears them. The offset counts towards the local clock used to pick the active
+line, so it stays smooth.
 
 ```yaml
 type: custom:ha-lyrics-card

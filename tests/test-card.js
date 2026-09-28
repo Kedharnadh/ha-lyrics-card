@@ -685,6 +685,21 @@ function findVolInput(c) {
   c._onClick({ target: resetBtn });
   eq('syncreset zeroes offset', c.offset, 0);
 
+  let plus = null, minus = null;
+  c.el.sync._walk((n) => {
+    if (!plus && n._matches('[data-c="sync+"]')) plus = n;
+    if (!minus && n._matches('[data-c="sync-"]')) minus = n;
+  });
+  c._onClick({ target: minus });
+  eq('sync- steps -0.5s', c.offset, -0.5);
+  c._onClick({ target: plus });
+  c._onClick({ target: plus });
+  eq('sync+ steps +1.0s from -0.5', c.offset, 0.5);
+  eq('offset label after nudge', c.el.syncVal.textContent, '+0.50s');
+  eq('offset persisted after nudge', global.localStorage.getItem('ha-lyrics:v1:off:radiohead|creep'), '0.5');
+  c._onClick({ target: resetBtn });
+  eq('nudged offset still resettable', c.offset, 0);
+
   c = makeCard({ sync_offset: 2 }, [[{ track_name: 'Creep' }, CREEP]]);
   c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
   await flush();
