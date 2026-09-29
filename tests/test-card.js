@@ -119,6 +119,75 @@ function findVolInput(c) {
   const a = c._position();
   await new Promise((r) => setTimeout(r, 200));
   eq('frozen while paused', Math.abs(c._position() - a) < 0.01, true);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 31) });
+  await new Promise((r) => setTimeout(r, 200));
+  eq('resumes from where it paused', c._position() - a > 0.3 && c._position() - a < 1.5, true);
+
+  console.log('\nmusic assistant players without a live position');
+  // Regression: Music Assistant driving a cast group publishes media_position
+  // only on track change and pause/resume - sometimes not at all - and leaves
+  // the tail of the finished track behind. The card used to sit on 0:00 with
+  // the first lyric line stuck for the whole song.
+  const EARLY = {
+    id: 4, trackName: 'Tick Tock', artistName: 'Tester', duration: 60,
+    plainLyrics: '', instrumental: false,
+    syncedLyrics: '[00:01.00] first\n[00:02.00] second\n[00:03.00] third'
+  };
+  function castState(o) {
+    const st = mkState({
+      friendly_name: 'Kitchen speaker',
+      media_title: o.title, media_artist: o.artist, media_album: '',
+      media_duration: o.duration, media_content_id: 'library://track/9',
+      ...(o.state ? { state: o.state } : {}),
+      ...('position' in o ? { media_position: o.position } : {})
+    });
+    return st;
+  }
+  const castHass = (o) => hass({ 'media_player.ma_kitchen': castState(o) });
+  const castCard = (o) => {
+    cache.clear();
+    const card = makeCard({ show_intro: false }, [[{ track_name: 'Tick Tock' }, EARLY]]);
+    card.hass = castHass(o);
+    return card;
+  };
+  const meta = { title: 'Tick Tock', artist: 'Tester', duration: 60 };
+
+  let ma = castCard(meta);
+  await flush();
+  eq('cast track collected', ma._keys.length, 1);
+  eq('lyrics loaded for the cast track', ma.data && ma.data.kind, 'synced');
+  const c0 = ma._position();
+  await new Promise((r) => setTimeout(r, 3200));
+  eq('no media_position -> clock still runs', ma._position() - c0 > 3, true);
+  eq('lyrics advanced on the card clock', ma.lineEls[ma.active].textContent, 'third');
+  eq('progress bar counts up', ma.el.tpos.textContent, '0:03');
+  eq('progress bar fills', parseFloat(ma.el.fill.style.width) > 2, true);
+  ma.hass = castHass({ ...meta, position: 5.5 });
+  eq('a later report is adopted', ma._position(), 5.5);
+
+  ma = castCard({ ...meta, state: 'paused' });
+  await flush();
+  eq('new track seen paused waits at zero', ma._position(), 0);
+  await new Promise((r) => setTimeout(r, 250));
+  eq('nothing drifts while paused', ma._position(), 0);
+  ma.hass = castHass(meta);
+  await new Promise((r) => setTimeout(r, 300));
+  eq('starts counting once playback starts', ma._position() > 0.2, true);
+
+  ma = castCard({ ...meta, position: 245 });
+  await flush();
+  eq('stale tail of the previous track restarts it', ma._position() < 1, true);
+  await new Promise((r) => setTimeout(r, 300));
+  eq('stale tail is not re-adopted', ma._position() > 0.2 && ma._position() < 1.5, true);
+  ma.hass = castHass({ ...meta, position: 4.2 });
+  eq('a real report still wins after a restart', ma._position(), 4.2);
+  eq('lyrics follow the real report', ma.lineEls[ma.active].textContent, 'third');
+
+  ma = castCard({ ...meta, position: null });
+  await flush();
+  eq('explicit null position is ignored', ma._position() < 1, true);
+  await new Promise((r) => setTimeout(r, 250));
+  eq('explicit null position does not freeze', ma._position() > 0.15, true);
 
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
@@ -159,10 +228,16 @@ function findVolInput(c) {
   c._onUp({ clientX: 203, clientY: 170, pointerId: 3 });
   eq('index unchanged on vertical drag', c.idx, 0);
 
-  console.log('\ntap advances');
+  console.log('\ntap stays put');
   c._onDown({ button: 0, clientX: 200, clientY: 100, pointerId: 4, target: c.el.lines });
   c._onUp({ clientX: 200, clientY: 100, pointerId: 4 });
-  eq('tap -> next track', c.idx, 1);
+  eq('tap does not switch track', c.idx, 0);
+  eq('tap still on Creep', c._tracks[c.idx].title, 'Creep');
+  eq('tap reveals the sync slider', c.el.sync.classList.contains('open'), true);
+  c._onDown({ button: 0, clientX: 200, clientY: 100, pointerId: 5, target: c.el.lines });
+  c._onMove({ clientX: 185, clientY: 101, pointerId: 5 });
+  c._onUp({ clientX: 185, clientY: 101, pointerId: 5 });
+  eq('short horizontal drag is not a swipe', c.idx, 0);
 
   console.log('\nintro splash');
   c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);

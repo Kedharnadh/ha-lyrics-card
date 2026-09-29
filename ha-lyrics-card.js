@@ -539,6 +539,17 @@
     return '';
   }
 
+  // media_position is optional in Home Assistant, and it can arrive as a number,
+  // a numeric string or an explicit null. Returns null when there is nothing
+  // usable to anchor to, which is the case for players that only report the
+  // position on track change (Music Assistant driving a cast group, for one).
+  function reportedPos(a) {
+    var v = a ? a.media_position : null;
+    if (v == null || v === '') return null;
+    var n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
   function fmt(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     var h = Math.floor(sec / 3600);
@@ -1431,18 +1442,27 @@
 
     _anchor() {
       var track = this._track();
-      if (!track) { this.anchor = null; return; }
-      var s = (this._hass.states || {})[track.entity];
+      var s = track ? (this._hass.states || {})[track.entity] : null;
       if (!s) { this.anchor = null; return; }
-      var p = Number(s.attributes && s.attributes.media_position);
-      if (!Number.isFinite(p)) p = 0;
-      this.anchor = { pos: p, raw: p, at: Date.now(), playing: s.state === 'playing' };
+      var p = reportedPos(s.attributes);
+      this.anchor = {
+        pos: p == null ? 0 : p,
+        raw: p,
+        at: Date.now(),
+        playing: s.state === 'playing'
+      };
     }
 
     _track() {
       return this._tracks ? (this._tracks[this.idx] || null) : null;
     }
 
+    // HA's media_position is a hint, not a stream: players are free to publish
+    // it only on track change, only while paused, or not at all. So the reported
+    // value is adopted whenever it moves and the card's own clock covers the
+    // rest. The anchor is folded forward on every call, which means it always
+    // describes "now" and can be re-based on a seek, a pause or a new report
+    // without ever throwing the position away.
     _position() {
       if (this._scrub != null) return this._scrub;
       var track = this._track();
@@ -1450,19 +1470,36 @@
       var s = (this._hass.states || {})[track.entity];
       if (!s) return 0;
       var a = s.attributes || {};
-      var p = Number(a.media_position);
-      if (Number.isFinite(p)) {
-        if (!this.anchor || Math.abs(p - this.anchor.raw) > 0.5) {
-          this.anchor = { pos: p, raw: p, at: Date.now(), playing: s.state === 'playing' };
-        }
-      }
+      var now = Date.now();
       var an = this.anchor;
-      var pos = an ? an.pos : 0;
-      if (an && an.playing && s.state === 'playing') pos += (Date.now() - an.at) / 1000;
+      if (!an) { this._anchor(); an = this.anchor; }
+      if (!an) return 0;
+      if (an.playing) an.pos += (now - an.at) / 1000;
+      an.at = now;
+      // Read live rather than latched, so playback that starts after the track
+      // appeared (or resumes later) is picked up instead of staying frozen.
+      an.playing = s.state === 'playing';
+      var p = reportedPos(a);
+      if (p == null) {
+        an.raw = null;
+      } else if (an.raw == null || Math.abs(p - an.raw) > 0.5) {
+        an.pos = p;
+        an.raw = p;
+      }
+      if (an.pos < 0) an.pos = 0;
       var dur = Number(a.media_duration) || track.duration || 0;
-      if (dur > 0 && pos > dur + 1.5) pos = 0;
-      if (pos < 0) pos = 0;
-      return pos;
+      if (dur > 0 && an.pos > dur) {
+        if (an.pos > dur + 2) {
+          // Past the end: the track finished, or the player is still
+          // advertising the tail of the previous one (what MA does to a cast
+          // group). Start again from zero and keep that value as the anchor so
+          // it is not re-adopted on every update.
+          an.pos = 0;
+          an.raw = p;
+        }
+        an.pos = Math.min(an.pos, dur);
+      }
+      return an.pos;
     }
 
     _update(force) {
@@ -1766,7 +1803,7 @@
       if (ev.target.closest) {
         if (ev.target.closest('.track') || ev.target.closest('.dot') || ev.target.closest('.controls') || ev.target.closest('.sync')) return;
       }
-      this.drag = { x: ev.clientX, y: ev.clientY, t: Date.now(), dx: 0, live: false, id: ev.pointerId };
+      this.drag = { x: ev.clientX, y: ev.clientY, dx: 0, live: false, id: ev.pointerId };
     }
 
     _onMove(ev) {
@@ -1784,17 +1821,16 @@
       this.el.pane.style.transform = 'translateX(' + (dx * 0.65) + 'px)';
     }
 
-    _onUp(ev) {
+    _onUp() {
       var d = this.drag;
       this.drag = null;
       this.el.vp.classList.remove('drag');
       this.el.pane.style.transform = '';
       if (!d) return;
+      // A tap stays on this speaker and only reveals the sync slider; moving
+      // between speakers is a deliberate swipe.
       if (!d.live) {
-        if (Date.now() - d.t < 400) {
-          this._next(ev.clientX < d.x ? 1 : -1);
-          this._pokeSync();
-        }
+        this._pokeSync();
         return;
       }
       if (Math.abs(d.dx) > SWIPE_PX) this._go(this.idx + (d.dx < 0 ? 1 : -1));
@@ -1802,11 +1838,6 @@
 
     _marqTouch() {
       if (this._marq) this._marq.until = Date.now() + 3200;
-    }
-
-    _next(dir) {
-      if (!this._keys || this._keys.length < 2) return;
-      this._go(this.idx + dir);
     }
 
     _go(i) {

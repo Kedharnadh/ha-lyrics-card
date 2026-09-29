@@ -39,7 +39,8 @@ raw 82.1 KB   ·   gzip ~21 KB
 - **No duplicate lyrics.** Two devices playing the same track are grouped into
   one entry. The header shows `Living Room +1` to tell you it's shared.
 - **Swipe when tracks differ.** Different tracks become dots in the header.
-  Swipe left/right to switch, or tap the card.
+  Swipe left/right to switch speakers. A tap stays where it is and just reveals
+  the sync slider.
 - **Instant.** No polling. It reads state HA already streams over the existing
   websocket and interpolates the play position with a local clock, so the
   highlight is smooth at 5 Hz without a single extra API call.
@@ -182,12 +183,12 @@ show_power: true
 
 ### Keeping a track in sync
 
-When a track's lyrics are a few seconds off, use the on-card `Sync` toolbar:
-the `−`/`+` buttons adjust the offset in 0.5 s steps, with the slider for
-fine-tuning (enable the toolbar with `show_sync_slider`); or set `sync_offset`
-once in YAML. Offsets are remembered per track in `localStorage`; `Reset`
-clears them. The offset counts towards the local clock used to pick the active
-line, so it stays smooth.
+When a track's lyrics are a few seconds off, use the on-card `Sync` toolbar: tap
+the card to open it, then the `−`/`+` buttons adjust the offset in 0.5 s steps,
+with the slider for fine-tuning (enable the toolbar with `show_sync_slider`); or
+set `sync_offset` once in YAML. Offsets are remembered per track in
+`localStorage`; `Reset` clears them. The offset counts towards the local clock
+used to pick the active line, so it stays smooth.
 
 ```yaml
 type: custom:ha-lyrics-card
@@ -290,6 +291,9 @@ Also worth knowing:
   The extra coverage MA adds is mainly Genius and self-hosted OpenSubsonic.
 - Your MA server must be reachable from the browser, and `wss://` is used
   automatically when the URL is `https://`.
+- MA players do not always report `media_position` to Home Assistant — a cast
+  group usually reports it only on track change and pause/resume, and sometimes
+  not at all. The card still scrolls along; see [Notes](#notes).
 
 ## Manual installation
 
@@ -318,9 +322,17 @@ Copy `ha-lyrics-card.js` into `config/www/`, add
 
 ## Notes
 
-- Syncing depends on the media player reporting `media_position`. Players that
-  only update it on track change still work, because the card extrapolates from
-  its own clock and re-anchors whenever HA's value moves.
+- Syncing depends on the media player reporting `media_position`, but only loosely.
+  The card treats it as a hint: it adopts the reported value whenever that value
+  moves, and its own clock covers the gaps. So players that publish the position
+  just on track change and pause/resume, or drop it entirely — Music Assistant
+  driving a Google Cast group, for instance — still scroll their lyrics and fill
+  their progress bar, and a position left over from the previous track restarts
+  the clock instead of parking it at `0:00`.
+- The one thing no card can invent is the position it missed while it was not
+  looking: if a player never reports one and you open the dashboard mid-song, the
+  count starts from `0:00` and catches up on the next track change. Tap the card
+  to nudge it with the sync slider.
 - Purely client-side, so lyrics are fetched from the browser's IP rather than
   your server's.
 - Lyrics come from LRCLIB, a community-run database. Coverage is good for
