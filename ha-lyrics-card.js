@@ -454,6 +454,7 @@
     smooth: true,
     show_track_info: true,
     show_friendly_name: true,
+    show_lyrics: true,
     track_info_font_size: 13,
     header_font_size: 0,
     header_alignment: 'inherit',
@@ -574,6 +575,7 @@
     c.smooth = bool(c.smooth, true);
     c.show_track_info = bool(c.show_track_info, true);
     c.show_friendly_name = bool(c.show_friendly_name, true);
+    c.show_lyrics = bool(c.show_lyrics, true);
     c.show_header = bool(c.show_header, true);
     c.track_info_font_size = Math.round(num(c.track_info_font_size, 13, 8, 40));
     c.header_font_size = Math.round(num(c.header_font_size, 0, 0, 48));
@@ -673,6 +675,11 @@
     '.stage{position:relative;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}',
     '.stage::-webkit-scrollbar{display:none}',
     '.stage.masked{-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 22%,#000 78%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 22%,#000 78%,transparent 100%)}',
+    '.hero{position:absolute;z-index:1;inset:0;margin:auto;display:block;max-width:100%;max-height:100%;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.42)}',
+    '.hero[hidden]{display:none}',
+    'ha-card.artmode .lines{display:none}',
+    'ha-card.fixed.artmode .vp{flex:1 1 0;min-height:0}',
+    'ha-card.fixed.artmode .pane,ha-card.fixed.artmode .stage{height:100%}',
     '.lines{min-height:100%}',
     '.lines.fixed{display:flex;flex-direction:column;justify-content:center}',
     '.lines.karaoke .l{line-height:calc(var(--lb) * 1.25)}',
@@ -703,7 +710,7 @@
     '      <div class="dots"></div>',
     '    </div>',
     '    <div class="vp"><div class="pane">',
-    '      <div class="stage"><div class="lines"></div></div>',
+    '      <div class="stage"><div class="lines"></div><img class="hero" hidden alt=""></div>',
     '    </div></div>',
     '    <div class="foot">',
     '      <div class="status"></div>',
@@ -794,6 +801,7 @@
           pane: this.root.querySelector('.pane'),
           stage: this.root.querySelector('.stage'),
           lines: this.root.querySelector('.lines'),
+          hero: this.root.querySelector('.hero'),
           status: this.root.querySelector('.status'),
           sync: this.root.querySelector('.sync'),
           syncIn: this.root.querySelector('.sync input'),
@@ -840,7 +848,11 @@
     }
 
     setConfig(cfg) {
+      var was = this.config ? this.config.show_lyrics !== false : true;
       this.config = normalize(Object.assign({}, cfg || {}));
+      // Toggling the lyrics pane changes what has to be loaded, so force a
+      // reload; _load falls back to the cache when it still has the track.
+      if ((this.config.show_lyrics !== false) !== was) this.loadedKey = null;
       if (!this.el) return;
       this._metrics();
       this._renderLines();
@@ -917,6 +929,7 @@
       if (!this.config) return 0;
       var c = this.config;
       if (c.height > 0 || c.card_height) return 0;
+      if (this._heroOn()) return c.max_lines * c.line_height;
       if (this.data && this.data.kind === 'static') return c.max_lines * c.line_height;
       if (c.layout === 'compact' || c.layout === 'minimal') return c.line_height;
       if (c.layout === 'two_line') return c.line_height * 2;
@@ -941,13 +954,15 @@
         if (!s || (s.state !== 'playing' && s.state !== 'paused')) continue;
         var a = s.attributes || {};
         var title = String(a.media_title || '').trim();
-        if (!title) continue;
-        var gk = squash(a.media_artist) + '|' + squash(title);
+        var named = !!title;
+        if (!named) title = String(a.friendly_name || '').trim() || id;
+        var gk = named ? squash(a.media_artist) + '|' + squash(title) : 'untitled|' + id;
         var g = groups.get(gk);
         if (!g) {
           g = {
             k: gk,
             title: title,
+            named: named,
             artist: a.media_artist || '',
             album: a.media_album || '',
             duration: Number(a.media_duration) || 0,
@@ -1005,34 +1020,75 @@
       if (el.textContent !== text) el.textContent = text;
     }
 
+    _lyricsOn() {
+      if (this.config && this.config.show_lyrics === false) return false;
+      var d = this.data;
+      return !!(d && d.lines && d.lines.length);
+    }
+
+    _artOf(track) {
+      var url = track && this.config.show_album_art ? (track.art || '') : '';
+      if (url && url === this._artFail) return '';
+      return url;
+    }
+
+    // With the lyrics pane empty or switched off there is nothing to put in the
+    // stage, so the artwork takes it over at full size, sharp and unblurred.
+    _heroOn() {
+      return !this._lyricsOn() && !!this._artOf(this._track());
+    }
+
+    _paintHero() {
+      var e = this.el;
+      if (!e) return;
+      var on = this._heroOn();
+      if (on !== this._artMode) {
+        this._artMode = on;
+        e.card.classList.toggle('artmode', on);
+        e.hero.hidden = !on;
+      }
+      if (!on) return;
+      var h = e.stage.clientHeight;
+      if (h !== this._heroH) {
+        this._heroH = h;
+        e.hero.style.maxHeight = (h > 8 ? h - 8 : 0) + 'px';
+      }
+    }
+
     _art(track) {
       var e = this.el;
-      var url = track && this.config.show_album_art ? (track.art || '') : '';
-      if (url && url === this._artFail) url = '';
+      var url = this._artOf(track);
       if (url !== this._artUrl) {
         this._artUrl = url;
         if (url) {
           var self = this;
-          e.artImg.onerror = function () {
+          var fail = function () {
             if (self._artUrl !== url) return;
             self._artFail = url;
             self._artUrl = null;
             self._art(track);
           };
+          e.artImg.onerror = fail;
+          e.hero.onerror = fail;
           e.artImg.src = url;
+          e.hero.src = url;
           e.bg.style.backgroundImage = 'url("' + String(url).replace(/["\\()]/g, encodeURIComponent) + '")';
           if (this.config.text_color_mode === 'auto') this._analyseArtwork(url);
         } else {
           e.artImg.onerror = null;
+          e.hero.onerror = null;
           e.artImg.removeAttribute('src');
+          e.hero.removeAttribute('src');
           e.bg.style.backgroundImage = '';
           this._artText = '';
         }
       }
       var on = !!url;
+      var hero = this._heroOn();
       e.art.hidden = !on;
-      e.bg.hidden = !on;
-      e.card.classList.toggle('has-bg', on);
+      e.bg.hidden = !on || hero;
+      e.card.classList.toggle('has-bg', on && !hero);
+      this._paintHero();
       this._applyTextColor();
     }
 
@@ -1071,7 +1127,7 @@
       if (mode === 'light') { prim = '#ffffff'; sec = 'rgba(255,255,255,.82)'; }
       else if (mode === 'dark') { prim = '#111111'; sec = '#3a3a3a'; }
       else if (mode === 'auto') {
-        if (c.background_mode === 'artwork' && this._artUrl && this._artText) {
+        if (c.background_mode === 'artwork' && this._artUrl && this._artText && !this._heroOn()) {
           if (this._artText === '#111111') { prim = '#111111'; sec = '#333333'; }
           else { prim = '#ffffff'; sec = 'rgba(255,255,255,.82)'; }
         }
@@ -1101,8 +1157,6 @@
         this._setText(e.status, '');
         if (this._dots !== 0) { e.dots.textContent = ''; this._dots = 0; }
         e.dots.style.display = 'none';
-        e.controls.hidden = true;
-        e.seek.hidden = true;
         return;
       }
       this._setText(e.splashT, track.title);
@@ -1118,8 +1172,9 @@
       var bits = [];
       if (track.artist) bits.push(track.artist);
       if (c.show_friendly_name) {
-        if (track.all.length > 1) bits.push(friendly + ' +' + (track.all.length - 1));
-        else bits.push(friendly);
+        var who = friendly;
+        if (track.all.length > 1) who += ' +' + (track.all.length - 1);
+        if (who !== track.title) bits.push(who);
       }
       this._setText(e.sub, bits.join(' \u00b7 '));
       var sig = this._keys.join(',') + '|' + this.idx;
@@ -1136,7 +1191,7 @@
       e.dots.style.display = c.layout === 'minimal' || order.length < 2 ? 'none' : '';
       var d = this.data;
       var st = '';
-      if (!d) st = this.msg || '';
+      if (!d) st = track && track.named === false ? this._stateText() : this.msg || '';
       else if (d.kind === 'instrumental') st = 'Instrumental';
       else if (d.kind === 'synced') {
         st = d.source === 'music_assistant' ? 'Music Assistant \u00b7 synced' : d.source === 'lrclib' ? 'LRCLIB \u00b7 synced' : 'synced';
@@ -1156,15 +1211,25 @@
       return track ? (this._hass.states || {})[track.entity] : null;
     }
 
+    _stateText() {
+      var s = this._st(this._track());
+      return s && s.state === 'paused' ? 'Paused' : 'Playing';
+    }
+
     _controls() {
       var e = this.el;
       var c = this.config;
       var track = this._track();
       if (!track || c.show_media_controls === false) {
+        this._ctlSig = null;
         e.controls.hidden = true;
-        e.seek.hidden = !(track && c.show_progress);
+        e.seek.hidden = true;
         return;
       }
+      // Visibility is owned here and never cached, so a track coming back after
+      // an interruption always brings the controls with it.
+      e.controls.hidden = false;
+      e.seek.hidden = !c.show_progress;
       var st = this._st(track);
       var a = st && st.attributes || {};
       var f = this._features(track);
@@ -1181,6 +1246,7 @@
       ].join('|');
       if (sig === this._ctlSig) {
         this._paintControls(track, st, playing, muted, vol, volMode);
+        this._paintSeek(true);
         return;
       }
       this._ctlSig = sig;
@@ -1201,10 +1267,8 @@
       if (c.show_power && ((f & F_TURN_ON) || (f & F_TURN_OFF))) {
         html += '<button class="cb" data-c="power" title="Power">' + ico('power') + '</button>';
       }
-      e.controls.hidden = false;
       e.controls.innerHTML = html;
       e.controls.style.setProperty('--ctrl', c.media_controls_size + 'px');
-      e.seek.hidden = !c.show_progress;
       this._paintControls(track, st, playing, muted, vol, volMode);
       this._paintSeek(true);
     }
@@ -1266,6 +1330,13 @@
       var self = this;
       var key = track.k;
       var cfg = this.config || {};
+      if (cfg.show_lyrics === false || track.named === false) {
+        this.data = null;
+        this.msg = cfg.show_lyrics === false ? 'Lyrics hidden' : this._stateText();
+        this.offset = 0;
+        this._renderLines();
+        return;
+      }
       var useMa = cfg.lyrics_source === 'music_assistant';
       var lkey = useMa ? key + '|ma' : key;
       var rec = force ? undefined : cacheGet(lkey);
@@ -1302,7 +1373,7 @@
       this.lineEls = [];
       this.active = -1;
       this._scrollTarget = null;
-      var d = this.data;
+      var d = this.config && this.config.show_lyrics === false ? null : this.data;
       this._metrics();
       this._marqueeReset();
       this._marqueeStop();
@@ -1397,9 +1468,10 @@
     _update(force) {
       this._marqueeSync();
       this._paintSeek(false);
+      this._paintHero();
       this._paintIntro();
       var d = this.data;
-      if (!d || d.kind !== 'synced' || !d.lines || !d.lines.length || !this.lineEls || !this.lineEls.length) return;
+      if (!this._lyricsOn() || !d || d.kind !== 'synced' || !d.lines || !d.lines.length || !this.lineEls || !this.lineEls.length) return;
       var pos = this._position();
       if (this.data.kind === 'synced') pos += (this.offset || 0);
       var lines = d.lines;
@@ -1452,11 +1524,10 @@
 
     _paintIntro() {
       var e = this.el;
-      var d = this.data;
       var track = this._track();
-      var on = !!(this.config.show_intro && d && d.lines && d.lines.length && track);
+      var on = !!(this.config.show_intro && this._lyricsOn() && track);
       if (on) {
-        var first = d.kind === 'synced' ? (d.lines[0].t || 0) : 0;
+        var first = this.data.kind === 'synced' ? (this.data.lines[0].t || 0) : 0;
         var until = Math.max(this.config.intro_duration, first);
         on = this._position() < until;
       }
@@ -1469,12 +1540,12 @@
 
     _plainAuto() {
       var c = this.config;
-      return !!(c && c.plain_lyrics_auto_scroll !== false && this._dur() > 0 && this.data && this.data.kind === 'static');
+      return !!(c && c.plain_lyrics_auto_scroll !== false && this._dur() > 0 && this._lyricsOn() && this.data.kind === 'static');
     }
 
     _driftOn() {
       var c = this.config;
-      return !!(c && c.static_scroll && this.data && this.data.kind === 'static');
+      return !!(c && c.static_scroll && this._lyricsOn() && this.data.kind === 'static');
     }
 
     _reducedMotion() {
@@ -1793,6 +1864,7 @@
           { name: 'progress_bar_color', selector: { text: { } } }
         ]],
         ['Lyrics appearance', [
+          { name: 'show_lyrics', selector: { boolean: { } } },
           { name: 'alignment', selector: { select: { mode: 'dropdown', options: [{ label: 'Left', value: 'left' }, { label: 'Centre', value: 'center' }, { label: 'Right', value: 'right' }] } } },
           { name: 'font_family', selector: { select: { mode: 'dropdown', custom_value: true, options: [{ label: 'System UI', value: 'system-ui' }, { label: 'Roboto', value: 'Roboto, sans-serif' }, { label: 'Inter', value: 'Inter, sans-serif' }, { label: 'Montserrat', value: 'Montserrat, sans-serif' }, { label: 'Poppins', value: 'Poppins, sans-serif' }, { label: 'Serif', value: 'serif' }, { label: 'Monospace', value: 'monospace' }] } } },
           { name: 'font_size', selector: { number: { min: 12, max: 120, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
@@ -1853,6 +1925,7 @@
       return ({
         entity: 'Media player', entities: 'Media players', layout: 'Layout', card_height: 'Card height (e.g. 260px, 65vh)',
         height: 'Card height (px)', show_track_info: 'Show track title and artist', show_friendly_name: 'Show player name',
+        show_lyrics: 'Show lyrics (album art when off)',
         show_intro: 'Show track intro before first lyric', intro_duration: 'Minimum intro duration', intro_font_size: 'Intro title size',
         show_media_controls: 'Show player controls', media_controls_size: 'Control button size',
         show_volume: 'Volume control', show_mute: 'Mute button', show_power: 'Power button',

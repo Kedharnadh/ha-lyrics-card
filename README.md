@@ -50,6 +50,10 @@ raw 82.1 KB   ·   gzip ~21 KB
   the card's background, blurred and dimmed behind a veil so the lyrics stay
   readable. Adaptive contrast picks a light or dark text colour off the artwork
   automatically.
+- **Art when there are no lyrics.** When a track has no lyrics, or you turn lyrics
+  off with `show_lyrics: false`, the card drops the blur and shows the artwork
+  full size instead, with the player controls still underneath. Media controls
+  stay visible whenever something is playing, even mid-track with no lyrics.
 - **Make it yours.** Five layouts, header styles, card height, fonts, colours,
   art size, blur and dimming are all configurable — see [Options](#options).
 
@@ -98,6 +102,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `active_scale` | `1.12` | Scale of the active lyric line |
 | `inactive_opacity` | `0.35` | Opacity of non-active lines |
 | `smooth` | `true` | Smooth scroll to the active line |
+| `show_lyrics` | `true` | Show the lyrics. When off, the card shows album art instead |
 | `show_intro` | `true` | Show a track-info splash before the first lyric |
 | `intro_duration` | `3` | Minimum intro length in seconds |
 | `intro_font_size` | `48` | Intro splash font size in px |
@@ -118,7 +123,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `show_progress` | `true` | Progress bar with seek support |
 | `background_mode` | `artwork` | `artwork`, `theme` or `transparent` |
 | `background_opacity` | `1` | Card backdrop opacity (0–1) |
-| `show_album_art` | `true` | Show album art in the header |
+| `show_album_art` | `true` | Show album art in the header. Also drives the full-size art shown when lyrics are off or unavailable |
 | `art_size` | `42` | Album art size in px (0–200) |
 | `artwork_blur` | `14` | Backdrop blur in px (0–80) |
 | `artwork_opacity` | `1` | How strongly the art shows through (0–1) |

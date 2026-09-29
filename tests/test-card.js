@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const fs = require('fs');
 const path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '..', 'ha-lyrics-card.js'), 'utf8');
@@ -797,6 +797,200 @@ function findVolInput(c) {
   eq('music_assistant kept', src('music_assistant'), 'music_assistant');
   eq('timeout clamped', makeCard({ music_assistant_timeout: 999 }, []).config.music_assistant_timeout, 30);
   eq('url trimmed', makeCard({ music_assistant_url: '  http://ma:8095  ' }, []).config.music_assistant_url, 'http://ma:8095');
+
+  console.log('\ncontrols survive a playback blip');
+  // Regression: the controls were hidden whenever there was no track, but the
+  // control signature was not reset, so a player coming back with an unchanged
+  // signature re-entered the cached path and never un-hid them.
+  cache.clear();
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  const blip = (state) => hass({
+    'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 30, state)
+  });
+  c.hass = blip('playing');
+  await flush();
+  eq('controls visible while playing', c.el.controls.hidden, false);
+  eq('seek bar visible while playing', c.el.seek.hidden, false);
+  const sig = c._ctlSig;
+  c.hass = blip('off');
+  await flush();
+  eq('controls hidden with nothing playing', c.el.controls.hidden, true);
+  eq('signature cleared while stopped', c._ctlSig, null);
+  c.hass = blip('playing');
+  await flush();
+  eq('same signature as before the blip', c._ctlSig, sig);
+  eq('controls visible again after the blip', c.el.controls.hidden, false);
+  eq('seek bar visible again after the blip', c.el.seek.hidden, false);
+  eq('toggle button rebuilt', !!findBtn(c, 'toggle'), true);
+
+  console.log('\ncontrols show whenever something is playing');
+  const untitledCalls = [];
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({
+    'media_player.radio': mkState({ friendly_name: 'Kitchen', supported_features: F.PAUSE | F.VOLUME_SET, volume_level: 0.3 })
+  }, (dom, svc, data) => untitledCalls.push({ svc, data }));
+  await flush();
+  eq('untitled player is collected', c._keys.length, 1);
+  eq('untitled player keeps its controls', c.el.controls.hidden, false);
+  eq('untitled player toggle present', !!findBtn(c, 'toggle'), true);
+  c._onClick({ target: findBtn(c, 'toggle') });
+  eq('untitled player still drives the entity', untitledCalls[untitledCalls.length - 1].svc, 'media_play_pause');
+  eq('untitled player entity id', untitledCalls[untitledCalls.length - 1].data.entity_id, 'media_player.radio');
+  eq('untitled player status explains itself', c.el.status.textContent, 'Playing');
+  c.hass = hass({
+    'media_player.radio': mkState({ friendly_name: 'Kitchen', state: 'paused', supported_features: F.PAUSE, volume_level: 0.3 })
+  });
+  await flush();
+  eq('untitled paused still shows controls', c.el.controls.hidden, false);
+  eq('untitled paused status', c.el.status.textContent, 'Paused');
+  eq('untitled paused track count', c._keys.length, 1);
+
+  // Two players on the same untitled stream stay separate pages.
+  c = makeCard({}, []);
+  c.hass = hass({
+    'media_player.a': mkState({ friendly_name: 'Same', supported_features: F.PAUSE }),
+    'media_player.b': mkState({ friendly_name: 'Same', supported_features: F.PAUSE })
+  });
+  await flush();
+  eq('untitled players are not merged', c._keys.length, 2);
+  eq('dots offered for both', c.el.dots.style.display, '');
+
+  console.log('\nno lyrics -> controls stay');
+  cache.clear();
+  c = makeCard({}, []);
+  c.hass = hass({ 'media_player.radio': player('media_player.radio', 'zz unknown tune 991', 'nobody', '', 200, 5) });
+  await flush();
+  eq('miss reported', c.el.status.textContent, 'No lyrics found');
+  eq('controls visible with no lyrics', c.el.controls.hidden, false);
+  eq('seek visible with no lyrics', c.el.seek.hidden, false);
+  eq('toggle usable with no lyrics', !!findBtn(c, 'toggle'), true);
+
+  c = makeCard({}, [[{ track_name: 'Weightless' }, INSTRU]]);
+  c.hass = hass({ 'media_player.radio': player('media_player.radio', 'Weightless', 'Marconi Union', '', 480, 10) });
+  await flush();
+  eq('controls visible for instrumental', c.el.controls.hidden, false);
+
+  c = makeCard({}, [[{ track_name: 'Pale' }, PLAIN]]);
+  c.hass = plainState(61);
+  await flush();
+  eq('unsynced lyrics keep their controls', c.el.controls.hidden, false);
+  eq('unsynced lyrics keep the seek bar', c.el.seek.hidden, false);
+
+  console.log('\nshow_lyrics option');
+  eq('show_lyrics defaults to on', makeCard({}, []).config.show_lyrics, true);
+  eq('show_lyrics off is honoured', makeCard({ show_lyrics: false }, []).config.show_lyrics, false);
+
+  cache.clear();
+  c = makeCard({ show_lyrics: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  let hits = 0;
+  global.fetch = (url) => { hits++; return fakeFetch([[{ track_name: 'Creep' }, CREEP]])(url); };
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('lyrics are never fetched when hidden', hits, 0);
+  eq('no lyric lines rendered', c._lyricsOn(), false);
+  eq('status explains the hidden lyrics', c.el.status.textContent, 'Lyrics hidden');
+  eq('stage shows the message, not lines', c.el.lines.textContent, 'Lyrics hidden');
+  eq('controls still shown with lyrics off', c.el.controls.hidden, false);
+  eq('progress bar still shown with lyrics off', c.el.seek.hidden, false);
+  eq('intro splash suppressed with lyrics off', c.el.splash.classList.contains('on'), false);
+  eq('no drift with lyrics off', c._driftOn(), false);
+
+  // Turning it back on re-fetches and repaints the lyrics.
+  c.setConfig({ show_lyrics: true });
+  await flush();
+  await flush();
+  eq('lyrics return when re-enabled', c._lyricsOn(), true);
+  eq('lyric lines rendered again', c.lineEls.length, 4);
+
+  console.log('\nalbum art takes over when there are no lyrics');
+  const artCard = (cfg, table, title) => {
+    cache.clear();
+    const card = makeCard(cfg || {}, table);
+    const st = player('media_player.spotify', title, 'Radiohead', 'Pablo Honey', 239, 20);
+    st.attributes.entity_picture = '/api/media_player_proxy/x/cover.jpg';
+    st.attributes.supported_features = F.PAUSE;
+    card.hass = hass({ 'media_player.spotify': st });
+    return card;
+  };
+  const heroBox = (card) => {
+    const e = card.el.hero;
+    return { hidden: e.hidden, src: e.src, on: card.el.card.classList.contains('artmode') };
+  };
+
+  c = artCard({}, [[{ track_name: 'Creep' }, CREEP]], 'Creep');
+  await flush();
+  eq('synced lyrics -> no art takeover', heroBox(c).on, false);
+  eq('synced lyrics -> art element hidden', heroBox(c).hidden, true);
+  eq('synced lyrics keep the blurred backdrop', c.el.bg.hidden, false);
+  eq('synced lyrics keep has-bg', c.el.card.classList.contains('has-bg'), true);
+
+  c = artCard({}, [], 'zz unknown tune 991');
+  await flush();
+  eq('no lyrics -> art takes over', heroBox(c).on, true);
+  eq('no lyrics -> art element shown', heroBox(c).hidden, false);
+  eq('no lyrics -> art element has the cover', heroBox(c).src, '/api/media_player_proxy/x/cover.jpg');
+  eq('no lyrics -> backdrop no longer blurred', c.el.bg.hidden, true);
+  eq('no lyrics -> has-bg dropped', c.el.card.classList.contains('has-bg'), false);
+  eq('no lyrics -> header thumb still shown', c.el.art.hidden, false);
+  eq('no lyrics -> controls still shown', c.el.controls.hidden, false);
+  eq('no lyrics -> auto contrast not taken from the art',
+    c.el.card.style.getPropertyValue('--ha-lyrics-primary'), '');
+
+  c = artCard({}, [[{ track_name: 'Weightless' }, INSTRU]], 'Weightless');
+  await flush();
+  eq('instrumental -> art takes over', heroBox(c).on, true);
+
+  c = artCard({}, [[{ track_name: 'Pale' }, PLAIN]], 'Pale');
+  await flush();
+  eq('unsynced lyrics still render as text', heroBox(c).on, false);
+  eq('unsynced lyrics keep the backdrop', c.el.bg.hidden, false);
+
+  c = artCard({ show_lyrics: false }, [[{ track_name: 'Creep' }, CREEP]], 'Creep');
+  await flush();
+  eq('lyrics hidden -> art takes over', heroBox(c).on, true);
+  eq('lyrics hidden -> backdrop unblurred', c.el.bg.hidden, true);
+
+  // No artwork at all: the message text is all we have, so it stays visible.
+  cache.clear();
+  c = makeCard({}, []);
+  c.hass = hass({ 'media_player.radio': player('media_player.radio', 'zz unknown tune 991', 'nobody', '', 200, 5) });
+  await flush();
+  eq('no art and no lyrics -> no takeover', c._heroOn(), false);
+  eq('no art and no lyrics -> message visible', c.el.lines.textContent, 'No lyrics found');
+  eq('no art and no lyrics -> controls shown', c.el.controls.hidden, false);
+
+  // A broken image URL must not leave a broken hero on screen.
+  cache.clear();
+  c = makeCard({}, []);
+  const stBroken = player('media_player.radio', 'zz unknown tune 991', 'nobody', '', 200, 5);
+  stBroken.attributes.entity_picture = '/local/missing.png';
+  c.hass = hass({ 'media_player.radio': stBroken });
+  await flush();
+  eq('broken art starts the takeover', c.el.hero.hidden, false);
+  c.el.hero.onerror();
+  eq('broken art falls back to the message', c.el.hero.hidden, true);
+  eq('broken art message shown', c.el.lines.textContent, 'No lyrics found');
+  eq('broken art drops has-bg', c.el.card.classList.contains('has-bg'), false);
+  eq('broken art keeps controls', c.el.controls.hidden, false);
+
+  console.log('\nart mode with a fixed card height');
+  // A fixed height collapses the stage, so the takeover must fill the leftover
+  // space rather than size itself from the (display:none) lyric lines.
+  c = artCard({ height: 300 }, [], 'zz unknown tune 991');
+  await flush();
+  eq('fixed height -> art mode on', heroBox(c).on, true);
+  eq('fixed height -> card carries the fixed height', c.el.card.style.height, '300px');
+  // The shim reports clientHeight 0, so maxHeight stays 0px here; the real
+  // sizing comes from the .artmode CSS rules, asserted in a browser run.
+  eq('fixed height -> art max-height is set from the stage', c.el.hero.style.maxHeight, '0px');
+  eq('fixed height -> art is the on-screen element', c.el.hero.hidden, false);
+  eq('fixed height -> controls still shown', c.el.controls.hidden, false);
+
+  c = artCard({ height: 300 }, [[{ track_name: 'Creep' }, CREEP]], 'Creep');
+  await flush();
+  eq('fixed height + lyrics -> no takeover', heroBox(c).on, false);
+  eq('fixed height + lyrics -> art element hidden', heroBox(c).hidden, true);
+  eq('fixed height + lyrics -> backdrop stays', c.el.bg.hidden, false);
 
   console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
