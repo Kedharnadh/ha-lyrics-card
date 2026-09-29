@@ -156,6 +156,8 @@ Album art is read from whichever of `entity_picture`, `media_image_url`,
 `http(s)` and root-relative URLs are used, so a hostile entity can't smuggle a
 `javascript:` or `data:` URL into the card.
 
+Width is the one thing there is no option for — see [Card width](#card-width).
+
 ### Layouts
 
 - `focus` — one large active line, surrounding lines see-through.
@@ -166,6 +168,29 @@ Album art is read from whichever of `entity_picture`, `media_image_url`,
 
 `height` / `card_height` set a fixed card height and are clamped; otherwise the
 card sizes itself from `max_lines × line_height`.
+
+### Card width
+
+There is no width option: the card fills whatever column the dashboard hands it,
+so width is set by the view.
+
+| View | How to change it |
+| --- | --- |
+| **Sections** (default) | Click the card, open its **Layout** tab, and use the grid size picker to set how many columns and rows it spans — sections are a 12-column grid. Enable **Full width card** to stretch it across the whole section, or **Precise mode** for finer steps. This is stored in the dashboard, not in the card YAML. |
+| **Masonry** | Always the full column width, so there is nothing to adjust. Use Sections or Panel if you need control. |
+| **Panel** | A single card, full screen width. |
+| **Sidebar** | Fixed two-column layout. |
+| **Grid** (legacy) | `grid_options` in the card YAML. The grid is 16 units wide. |
+
+```yaml
+type: custom:ha-lyrics-card
+grid_options:
+  columns: 12
+  rows: 4
+```
+
+Note that there is no maximum width: in a Panel view or on a wide desktop the
+card uses all the space it is given, and long lyric lines simply wrap.
 
 ### Media controls
 
