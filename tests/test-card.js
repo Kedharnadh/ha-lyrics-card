@@ -189,6 +189,25 @@ function findVolInput(c) {
   await new Promise((r) => setTimeout(r, 250));
   eq('explicit null position does not freeze', ma._position() > 0.15, true);
 
+  console.log('\nactive line keeps its row count');
+  // The enlarged active line must not wrap onto more rows than at base size,
+  // or the list jumps when it shrinks back. Fake a line that wraps above 48px.
+  let fit = makeCard({ font_size: 40, active_scale: 1.5 }, [[{ track_name: 'Creep' }, CREEP]]);
+  fit.hass = hass({
+    'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20)
+  });
+  await flush();
+  const ln = fit.lineEls[0];
+  Object.defineProperty(ln, 'offsetHeight', {
+    get() { return parseFloat(this.style.fontSize) > 48 ? 76 : 38; },
+    configurable: true
+  });
+  ln.style.transition = 'font-size .3s';
+  fit._fitActiveLine(ln);
+  eq('shrinks until it stops wrapping', parseFloat(ln.style.fontSize), 48);
+  eq('transition restored after measuring', ln.style.transition, 'font-size .3s');
+  fit.disconnectedCallback();
+
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
     [{ track_name: 'Creep' }, CREEP],
