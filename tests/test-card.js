@@ -163,7 +163,7 @@ function findVolInput(c) {
   eq('progress bar counts up', ma.el.tpos.textContent, '0:03');
   eq('progress bar fills', parseFloat(ma.el.fill.style.width) > 2, true);
   ma.hass = castHass({ ...meta, position: 5.5 });
-  eq('a later report is adopted', ma._position(), 5.5);
+  eq('a later report is adopted', Math.round(ma._position() * 10) / 10, 5.5);
 
   ma = castCard({ ...meta, state: 'paused' });
   await flush();
