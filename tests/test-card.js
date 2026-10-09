@@ -616,6 +616,14 @@ function findVolInput(c) {
   c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
   await flush();
   eq('card_height accepted as css string', c.el.card.style.height, '300px');
+  // With a fixed card height the lines still need a centering pad, or the
+  // first and last lines sit in the stage's masked edges even while active.
+  // The stage's real height is only known after layout.
+  c.el.stage.clientHeight = 240;
+  c._scrollTo(c.lineEls[c.active] || c.lineEls[0]);
+  eq('fixed height pads lines from the real stage height', c.el.lines.style.paddingTop,
+    Math.round((240 - c.config.line_height) / 2) + 'px');
+  eq('bottom pad matches', c.el.lines.style.paddingBottom, c.el.lines.style.paddingTop);
 
   c = makeCard({ align: 'left' }, [[{ track_name: 'Creep' }, CREEP]]);
   c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
