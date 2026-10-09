@@ -550,6 +550,18 @@
     return Number.isFinite(n) && n >= 0 ? n : null;
   }
 
+  // When HA stamped the reported position (media_position_updated_at), as ms
+  // since epoch, or null.
+  function reportedAt(a) {
+    var t = a ? Date.parse(a.media_position_updated_at) : NaN;
+    return Number.isFinite(t) ? t : null;
+  }
+
+  // The reported position carried forward to now while playing.
+  function livePos(p, at, playing) {
+    return playing && at != null ? p + Math.max(0, (Date.now() - at) / 1000) : p;
+  }
+
   function fmt(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     var h = Math.floor(sec / 3600);
@@ -1445,9 +1457,11 @@
       var s = track ? (this._hass.states || {})[track.entity] : null;
       if (!s) { this.anchor = null; return; }
       var p = reportedPos(s.attributes);
+      var stamp = reportedAt(s.attributes);
       this.anchor = {
-        pos: p == null ? 0 : p,
+        pos: p == null ? 0 : livePos(p, stamp, s.state === 'playing'),
         raw: p,
+        stamp: stamp,
         at: Date.now(),
         playing: s.state === 'playing'
       };
@@ -1480,11 +1494,15 @@
       // appeared (or resumes later) is picked up instead of staying frozen.
       an.playing = s.state === 'playing';
       var p = reportedPos(a);
+      var stamp = reportedAt(a);
       if (p == null) {
         an.raw = null;
-      } else if (an.raw == null || Math.abs(p - an.raw) > 0.5) {
-        an.pos = p;
+      } else if (an.raw == null || Math.abs(p - an.raw) > 0.5 || (stamp != null && stamp !== an.stamp)) {
+        // A new stamp is a fresh report even when the value repeats (restarting
+        // a track reports 0 again), and the stamp says how long ago it was true.
+        an.pos = livePos(p, stamp, an.playing);
         an.raw = p;
+        an.stamp = stamp;
       }
       if (an.pos < 0) an.pos = 0;
       var dur = Number(a.media_duration) || track.duration || 0;

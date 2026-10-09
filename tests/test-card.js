@@ -189,6 +189,30 @@ function findVolInput(c) {
   await new Promise((r) => setTimeout(r, 250));
   eq('explicit null position does not freeze', ma._position() > 0.15, true);
 
+  console.log('\nposition stamps (media_position_updated_at)');
+  // HA stamps every position report. A page loaded mid-song should count from
+  // the stamp, and a repeated value with a new stamp (restarting a track
+  // reports 0 again) is a fresh report.
+  const stamped = (pos, agoSec, state) => {
+    const st = player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, pos, state);
+    st.attributes.media_position_updated_at = new Date(Date.now() - agoSec * 1000).toISOString();
+    return hass({ 'media_player.spotify': st });
+  };
+  const round1 = (v) => Math.round(v * 10) / 10;
+  let ps = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  ps.hass = stamped(30, 10);
+  await flush();
+  eq('page loaded mid-song counts from the stamp', Math.round(ps._position()), 40);
+  ps.hass = stamped(0, 0);
+  eq('jump to the start adopted', round1(ps._position()), 0);
+  await new Promise((r) => setTimeout(r, 600));
+  eq('clock runs from there', ps._position() > 0.4, true);
+  ps.hass = stamped(0, 0);
+  eq('restart reporting 0 again is adopted', round1(ps._position()), 0);
+  ps.hass = stamped(30, 10, 'paused');
+  eq('a paused report is not carried forward', round1(ps._position()), 30);
+  ps.disconnectedCallback();
+
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
     [{ track_name: 'Creep' }, CREEP],
