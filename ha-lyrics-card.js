@@ -1539,12 +1539,23 @@
       var c = this.config;
       var base = c.font_size;
       var target = Math.round(base * c.active_scale);
+      // Never let the bigger active font wrap onto more rows than the line takes
+      // at base size, or the list jumps when it shrinks back. _active() re-runs
+      // this on every forced update, so measure and settle with the font-size
+      // transition off: the size it lands on is the one it already had, and
+      // nothing animates (or pulses) between runs.
+      var transition = el.style.transition;
+      el.style.transition = 'none';
+      el.style.fontSize = base + 'px';
+      var baseH = el.offsetHeight;
       el.style.fontSize = target + 'px';
       var maxW = el.parentElement ? el.parentElement.clientWidth : el.clientWidth;
-      while (el.scrollWidth > maxW + 1 && target > 12) {
+      while ((el.scrollWidth > maxW + 1 || el.offsetHeight > baseH + 1) && target > Math.min(base, 12)) {
         target -= 1;
         el.style.fontSize = target + 'px';
       }
+      void el.offsetHeight;  // settle at the final size before the transition comes back
+      el.style.transition = transition;
     }
 
     _scrollTo(el) {
