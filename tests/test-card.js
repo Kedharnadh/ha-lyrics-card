@@ -535,6 +535,25 @@ function findVolInput(c) {
   noScroll._marqueeSync();
   eq('no frame armed when disabled', noScroll._raf || 0, 0);
 
+  // A paused player or a hidden card (e.g. a dashboard visibility condition)
+  // must not keep a 60 fps loop running.
+  console.log('\nmarquee: idle when paused or hidden');
+  let idle = makeCard({ plain_lyrics_auto_scroll: false }, plainTable);
+  idle.hass = plainState(0, 'paused');
+  await flush();
+  idle._marqueeSync();
+  eq('no frame armed while paused', idle._raf || 0, 0);
+  idle.hass = plainState(0, 'playing');
+  idle._marqueeSync();
+  eq('arms once playback resumes', !!idle._raf, true);
+  idle.el.stage.hidden = true;
+  idle._marqueeSync();
+  eq('no frame armed while the card is hidden', idle._raf || 0, 0);
+  idle.el.stage.hidden = false;
+  idle._marqueeSync();
+  eq('arms again once shown', !!idle._raf, true);
+  idle.disconnectedCallback();
+
   // Synced lyrics must never drift.
   let sy = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
   sy.hass = hass({

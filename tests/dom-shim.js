@@ -88,6 +88,11 @@ class El {
     return t;
   }
   scrollTo(o) { this.scrollTop = Math.max(0, o.top); }
+  // No boxes when this element or an ancestor is hidden, like display:none.
+  getClientRects() {
+    for (let n = this; n; n = n.parentNode) if (n._hidden) return [];
+    return [{}];
+  }
 }
 
 const VOID = new Set(['img', 'br', 'hr', 'input', 'meta', 'link', 'source']);
@@ -131,7 +136,7 @@ function install() {
     get: (t) => (defs[t] || false),
     define: (t, c) => { defs[t] = c; global.Card = defs['ha-lyrics-card']; }
   };
-  global.window = { customCards: [], matchMedia: () => ({ matches: global.__reducedMotion === true }) };
+  global.window = { customCards: [], matchMedia: () => ({ get matches() { return global.__reducedMotion === true; } }) };
   global.localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => store.set(k, String(v)),
