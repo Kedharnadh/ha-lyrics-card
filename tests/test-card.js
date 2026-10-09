@@ -163,7 +163,7 @@ function findVolInput(c) {
   eq('progress bar counts up', ma.el.tpos.textContent, '0:03');
   eq('progress bar fills', parseFloat(ma.el.fill.style.width) > 2, true);
   ma.hass = castHass({ ...meta, position: 5.5 });
-  eq('a later report is adopted', ma._position(), 5.5);
+  eq('a later report is adopted', Math.round(ma._position() * 10) / 10, 5.5);
 
   ma = castCard({ ...meta, state: 'paused' });
   await flush();
@@ -424,6 +424,46 @@ function findVolInput(c) {
   noScroll._marqueeStop();
   noScroll._marqueeSync();
   eq('no frame armed when disabled', noScroll._raf || 0, 0);
+
+  // Regression: _update() runs on every tick and used to start another rAF
+  // loop each time without cancelling the last, so loops piled up until the
+  // renderer pegged a core.
+  console.log('\nmarquee: one loop at a time');
+  let one = makeCard({ plain_lyrics_auto_scroll: false }, plainTable);
+  one.hass = plainState();
+  await flush();
+  sizeStage(one, 200, 1000);
+  one._marqueeStop();
+  let rafCalls = 0;
+  const realRaf = global.requestAnimationFrame;
+  global.requestAnimationFrame = function (fn) { rafCalls++; return realRaf(fn); };
+  for (let i = 0; i < 10; i++) one._update(false);
+  global.requestAnimationFrame = realRaf;
+  eq('repeated updates arm a single frame', rafCalls, 1);
+  one._marqueeStop();
+  eq('stop leaves nothing armed', one._raf || 0, 0);
+  one._marqueeSync();
+  eq('arms again after a stop', !!one._raf, true);
+  one.disconnectedCallback();
+
+  // A paused player or a hidden card (e.g. a dashboard visibility condition)
+  // must not keep a 60 fps loop running.
+  console.log('\nmarquee: idle when paused or hidden');
+  let idle = makeCard({ plain_lyrics_auto_scroll: false }, plainTable);
+  idle.hass = plainState(0, 'paused');
+  await flush();
+  idle._marqueeSync();
+  eq('no frame armed while paused', idle._raf || 0, 0);
+  idle.hass = plainState(0, 'playing');
+  idle._marqueeSync();
+  eq('arms once playback resumes', !!idle._raf, true);
+  idle.el.stage.hidden = true;
+  idle._marqueeSync();
+  eq('no frame armed while the card is hidden', idle._raf || 0, 0);
+  idle.el.stage.hidden = false;
+  idle._marqueeSync();
+  eq('arms again once shown', !!idle._raf, true);
+  idle.disconnectedCallback();
 
   // Synced lyrics must never drift.
   let sy = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);

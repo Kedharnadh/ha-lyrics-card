@@ -1586,17 +1586,30 @@
     }
 
     _reducedMotion() {
-      return typeof window.matchMedia === 'function' &&
-        !!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // The query list is live, so build it once instead of on every frame.
+      if (this._rmq === undefined) {
+        this._rmq = typeof window.matchMedia === 'function' ?
+          window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      }
+      return !!(this._rmq && this._rmq.matches);
     }
 
     _marqueeSync() {
-      var on = this._driftOn() && !this._reducedMotion() && !!this.el;
+      // Only scroll while the track is actually playing and the card is laid
+      // out: a paused player or a hidden card (e.g. a dashboard visibility
+      // condition) otherwise keeps a 60 fps loop running for nothing.
+      var st = this._st(this._track());
+      var on = this._driftOn() && !this._reducedMotion() && !!this.el &&
+        !!st && st.state === 'playing' &&
+        !!this.el.stage && this.el.stage.getClientRects().length > 0;
       if (on) this._marqueeStart();
       else this._marqueeStop();
     }
 
     _marqueeStart() {
+      // _update() calls this on every tick; without the guard each call
+      // started another rAF loop that _marqueeStop() could never cancel.
+      if (this._raf) return;
       var self = this;
       this._raf = requestAnimationFrame(function () { self._marqueeStep(); });
     }
@@ -1616,6 +1629,7 @@
     }
 
     _marqueeStep(now) {
+      this._raf = 0;
       var stage = this.el.stage;
       if (!stage) return;
       if (this._reducedMotion()) { this._raf = 0; return; }
