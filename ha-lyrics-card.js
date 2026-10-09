@@ -1833,16 +1833,28 @@
       var c = this.config;
       var base = c.font_size;
       var target = Math.round(base * c.active_scale);
+      // Never let the bigger active font wrap onto more rows than the line takes
+      // at base size, or the list jumps when it shrinks back. _active() re-runs
+      // this on every forced update, so measure and settle with the font-size
+      // transition off: the size it lands on is the one it already had, and
+      // nothing animates (or pulses) between runs.
+      var transition = el.style.transition;
+      el.style.transition = 'none';
+      el.style.fontSize = base + 'px';
+      var baseH = el.offsetHeight;
       el.style.fontSize = target + 'px';
       // The card can be measured while hidden (display:none hands out a width of
       // 0). Shrinking against that would floor every line to 12px, so only fit
       // when we actually have a width; _onResize re-fits once it is visible.
       var maxW = el.parentElement ? el.parentElement.clientWidth : el.clientWidth;
-      if (!(maxW > 0)) return;
-      while (el.scrollWidth > maxW + 1 && target > 12) {
-        target -= 1;
-        el.style.fontSize = target + 'px';
+      if (maxW > 0) {
+        while ((el.scrollWidth > maxW + 1 || el.offsetHeight > baseH + 1) && target > Math.min(base, 12)) {
+          target -= 1;
+          el.style.fontSize = target + 'px';
+        }
       }
+      void el.offsetHeight;  // settle at the final size before the transition comes back
+      el.style.transition = transition;
     }
 
     _onResize() {
