@@ -189,6 +189,20 @@ function findVolInput(c) {
   await new Promise((r) => setTimeout(r, 250));
   eq('explicit null position does not freeze', ma._position() > 0.15, true);
 
+  console.log('\nalbum from media_album_name');
+  // HA's media player attribute is media_album_name; the album must reach the
+  // LRCLIB lookup (this table only answers when the album is in the query).
+  const albumState = mkState({
+    friendly_name: 'spotify', media_title: 'Creep', media_artist: 'Radiohead',
+    media_album_name: 'Pablo Honey', media_duration: 239, media_position: 20
+  });
+  let al = makeCard({}, [[{ track_name: 'Creep', album_name: 'Pablo Honey' }, CREEP]]);
+  al.hass = hass({ 'media_player.spotify': albumState });
+  await flush();
+  eq('album read from media_album_name', al._tracks[0].album, 'Pablo Honey');
+  eq('album reaches the lookup', al.data && al.data.kind, 'synced');
+  al.disconnectedCallback();
+
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
     [{ track_name: 'Creep' }, CREEP],

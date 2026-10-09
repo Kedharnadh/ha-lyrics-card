@@ -975,7 +975,7 @@
             title: title,
             named: named,
             artist: a.media_artist || '',
-            album: a.media_album || '',
+            album: a.media_album_name || a.media_album || '',
             duration: Number(a.media_duration) || 0,
             entity: id,
             all: [],
