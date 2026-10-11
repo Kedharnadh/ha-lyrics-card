@@ -1008,6 +1008,10 @@ function findVolInput(c) {
   eq('no lyrics -> has-bg dropped', c.el.card.classList.contains('has-bg'), false);
   eq('no lyrics -> header thumb still shown', c.el.art.hidden, false);
   eq('no lyrics -> controls still shown', c.el.controls.hidden, false);
+  // The takeover should be large: the stage is not pinned to the lyric box, so
+  // the .artmode CSS can size it to the card width (a square) instead.
+  eq('no lyrics -> stage left free to fill', c.el.stage.style.height, '');
+  eq('no lyrics -> stage sizing delegated to css', c._stagePx(), 0);
   eq('no lyrics -> auto contrast not taken from the art',
     c.el.card.style.getPropertyValue('--ha-lyrics-primary'), '');
 
@@ -1055,9 +1059,11 @@ function findVolInput(c) {
   await flush();
   eq('fixed height -> art mode on', heroBox(c).on, true);
   eq('fixed height -> card carries the fixed height', c.el.card.style.height, '300px');
-  // The shim reports clientHeight 0, so maxHeight stays 0px here; the real
-  // sizing comes from the .artmode CSS rules, asserted in a browser run.
-  eq('fixed height -> art max-height is set from the stage', c.el.hero.style.maxHeight, '0px');
+  // The hero no longer clamps itself with an inline max-height; it fills the
+  // stage via the .artmode CSS rules (height:100% here, aspect-ratio:1 when the
+  // card is auto-height). Assert the stage is left free to fill.
+  eq('fixed height -> stage not pinned to the line box', c.el.stage.style.height, '');
+  eq('fixed height -> art has no inline max-height', c.el.hero.style.getPropertyValue('max-height'), '');
   eq('fixed height -> art is the on-screen element', c.el.hero.hidden, false);
   eq('fixed height -> controls still shown', c.el.controls.hidden, false);
 

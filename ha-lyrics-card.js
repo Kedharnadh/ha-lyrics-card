@@ -716,6 +716,7 @@
     '.hero{position:absolute;z-index:1;inset:0;margin:auto;display:block;max-width:100%;max-height:100%;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.42)}',
     '.hero[hidden]{display:none}',
     'ha-card.artmode .lines{display:none}',
+    'ha-card.artmode:not(.fixed) .stage{aspect-ratio:1}',
     'ha-card.fixed.artmode .vp{flex:1 1 0;min-height:0}',
     'ha-card.fixed.artmode .pane,ha-card.fixed.artmode .stage{height:100%}',
     '.lines{min-height:100%}',
@@ -1004,7 +1005,9 @@
       if (!this.config) return 0;
       var c = this.config;
       if (c.height > 0 || c.card_height) return 0;
-      if (this._heroOn()) return c.max_lines * c.line_height;
+      // Art takeover sizes itself from the card width (a square) or the fixed
+      // card height, both handled in CSS, so keep the stage free to fill.
+      if (this._heroOn()) return 0;
       if (this.data && this.data.kind === 'static') return c.max_lines * c.line_height;
       if (c.layout === 'compact' || c.layout === 'minimal') return c.line_height;
       if (c.layout === 'two_line') return c.line_height * 2;
@@ -1124,12 +1127,6 @@
         e.card.classList.toggle('artmode', on);
         e.hero.hidden = !on;
         if (e.cap) e.cap.hidden = !on;
-      }
-      if (!on) return;
-      var h = e.stage.clientHeight;
-      if (h !== this._heroH) {
-        this._heroH = h;
-        e.hero.style.maxHeight = (h > 8 ? h - 8 : 0) + 'px';
       }
     }
 
