@@ -1073,6 +1073,39 @@ function findVolInput(c) {
   eq('fixed height + lyrics -> art element hidden', heroBox(c).hidden, true);
   eq('fixed height + lyrics -> backdrop stays', c.el.bg.hidden, false);
 
+  console.log('\nart sizing preference (art_mode)');
+  c = artCard({}, [], 'zz unknown tune 991');
+  await flush();
+  eq('default art_mode is screen', c.config.art_mode, 'screen');
+  eq('screen mode class on the card', c.el.card.classList.contains('art-screen'), true);
+  eq('screen -> stage sizing delegated to css', c._stagePx(), 0);
+
+  c = artCard({ art_mode: 'square' }, [], 'zz unknown tune 991');
+  await flush();
+  eq('square mode class on the card', c.el.card.classList.contains('art-square'), true);
+  eq('square -> no cap, css only', c._stagePx(), 0);
+  eq('square -> still takes over', c.el.card.classList.contains('artmode'), true);
+
+  c = artCard({ art_mode: 'cover' }, [], 'zz unknown tune 991');
+  await flush();
+  eq('cover mode class on the card', c.el.card.classList.contains('art-cover'), true);
+  eq('cover -> stage sizing delegated to css', c._stagePx(), 0);
+
+  c = artCard({ art_mode: 'compact' }, [], 'zz unknown tune 991');
+  await flush();
+  const compactPx = c.config.max_lines * c.config.line_height;
+  eq('compact mode class on the card', c.el.card.classList.contains('art-compact'), true);
+  eq('compact -> stage pinned to the lyric box', c._stagePx(), compactPx);
+  eq('compact -> stage height set inline', c.el.stage.style.height, compactPx + 'px');
+  eq('compact -> art still takes over', c.el.card.classList.contains('artmode'), true);
+
+  c = artCard({ art_mode: 'bogus' }, [], 'zz unknown tune 991');
+  await flush();
+  eq('unknown art_mode falls back to screen', c.config.art_mode, 'screen');
+  eq('unknown art_mode gets the screen class', c.el.card.classList.contains('art-screen'), true);
+  eq('unknown art_mode is not left on the card as a stray class',
+    c.el.card.classList.contains('art-bogus'), false);
+
   console.log('\nm-disabled lyrics marquee does not spawn parallel frames');
   // Regression: _marqueeSync runs every tick, and _marqueeStart was not guarded,
   // so each call armed another self-perpetuating rAF loop.

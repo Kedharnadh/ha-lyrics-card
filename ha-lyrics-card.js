@@ -494,6 +494,7 @@
     background_opacity: 1,
     art_size: 42,
     show_album_art: true,
+    art_mode: 'screen',
     artwork_blur: 14,
     artwork_opacity: 1,
     artwork_overlay_opacity: 0.4,
@@ -629,6 +630,7 @@
     c.background_opacity = num(c.background_opacity, 1, 0, 1);
     c.show_album_art = bool(c.show_album_art, true);
     c.art_size = Math.round(num(c.art_size, 42, 0, 200));
+    c.art_mode = ['screen', 'square', 'compact', 'cover'].indexOf(c.art_mode) >= 0 ? c.art_mode : 'screen';
     if (!('artwork_blur' in raw) && 'background_blur' in raw) c.artwork_blur = raw.background_blur;
     if (!('artwork_opacity' in raw) && 'background_dim' in raw) c.artwork_opacity = raw.background_dim;
     if (!('artwork_overlay_opacity' in raw) && 'background_veil' in raw) c.artwork_overlay_opacity = raw.background_veil;
@@ -716,7 +718,12 @@
     '.hero{position:absolute;z-index:1;inset:0;margin:auto;display:block;max-width:100%;max-height:100%;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.42)}',
     '.hero[hidden]{display:none}',
     'ha-card.artmode .lines{display:none}',
-    'ha-card.artmode:not(.fixed) .stage{aspect-ratio:1}',
+    // Screen (capped square) and cover share a square stage capped to the
+    // viewport; square is the same square without the cap; compact keeps the
+    // old max_lines box (stage height is set inline for that mode).
+    'ha-card.artmode.art-screen:not(.fixed) .stage,ha-card.artmode.art-square:not(.fixed) .stage,ha-card.artmode.art-cover:not(.fixed) .stage{aspect-ratio:1}',
+    'ha-card.artmode.art-screen:not(.fixed) .stage,ha-card.artmode.art-cover:not(.fixed) .stage{max-height:max(240px,calc(100vh - 150px))}',
+    'ha-card.artmode.art-cover .hero{inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;object-fit:cover}',
     'ha-card.fixed.artmode .vp{flex:1 1 0;min-height:0}',
     'ha-card.fixed.artmode .pane,ha-card.fixed.artmode .stage{height:100%}',
     '.lines{min-height:100%}',
@@ -1006,8 +1013,9 @@
       var c = this.config;
       if (c.height > 0 || c.card_height) return 0;
       // Art takeover sizes itself from the card width (a square) or the fixed
-      // card height, both handled in CSS, so keep the stage free to fill.
-      if (this._heroOn()) return 0;
+      // card height, both handled in CSS, so keep the stage free to fill. The
+      // compact mode opts back into the old max_lines box instead.
+      if (this._heroOn()) return c.art_mode === 'compact' ? c.max_lines * c.line_height : 0;
       if (this.data && this.data.kind === 'static') return c.max_lines * c.line_height;
       if (c.layout === 'compact' || c.layout === 'minimal') return c.line_height;
       if (c.layout === 'two_line') return c.line_height * 2;
@@ -1121,6 +1129,12 @@
     _paintHero() {
       var e = this.el;
       if (!e) return;
+      var cls = 'art-' + this.config.art_mode;
+      if (cls !== this._artClass) {
+        if (this._artClass) e.card.classList.remove(this._artClass);
+        e.card.classList.add(cls);
+        this._artClass = cls;
+      }
       var on = this._heroOn();
       if (on !== this._artMode) {
         this._artMode = on;
@@ -2111,6 +2125,7 @@
           { name: 'background_opacity', selector: { number: { min: 0, max: 1, step: 0.01, mode: 'box' } } },
           { name: 'art_size', selector: { number: { min: 0, max: 200, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
           { name: 'show_album_art', selector: { boolean: { } } },
+          { name: 'art_mode', selector: { select: { mode: 'dropdown', options: [{ label: 'Fit to screen (capped square)', value: 'screen' }, { label: 'Square, no cap', value: 'square' }, { label: 'Compact (card height)', value: 'compact' }, { label: 'Fill the box (crop)', value: 'cover' }] } } },
           { name: 'artwork_blur', selector: { number: { min: 0, max: 40, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
           { name: 'artwork_opacity', selector: { number: { min: 0, max: 1, step: 0.01, mode: 'box' } } },
           { name: 'artwork_overlay_opacity', selector: { number: { min: 0, max: 1, step: 0.01, mode: 'box' } } },
@@ -2166,6 +2181,7 @@
         header_font_size: 'Header font size', header_alignment: 'Header alignment', header_layout: 'Header layout',
         background_mode: 'Background source', background_opacity: 'Card background opacity', art_size: 'Album art size',
         show_album_art: 'Show album art', artwork_blur: 'Artwork blur', artwork_opacity: 'Artwork opacity',
+        art_mode: 'Artwork size (when there are no lyrics)',
         artwork_overlay_opacity: 'Artwork dark overlay', text_color_mode: 'Lyric colour', contrast_mode: 'Adaptive contrast',
         backdrop_blur: 'Contrast blur', backdrop_opacity: 'Contrast overlay opacity', text_shadow: 'Text drop shadows',
         text_shadow_strength: 'Text shadow strength', show_sync_slider: 'Show on-card sync slider', sync_offset: 'Starting sync offset',
