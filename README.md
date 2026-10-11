@@ -178,7 +178,9 @@ card sizes itself from `max_lines × line_height`.
 ### Card width
 
 There is no width option: the card fills whatever column the dashboard hands it,
-so width is set by the view.
+so width is set by the view. It does declare a sensible default for the Sections
+view — full width, shrinkable to a quarter column and at least two rows tall —
+which you can override per card in the **Layout** tab.
 
 | View | How to change it |
 | --- | --- |
