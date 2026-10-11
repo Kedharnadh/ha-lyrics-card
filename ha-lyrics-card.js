@@ -487,6 +487,7 @@
     header_alignment: 'inherit',
     header_layout: 'combined',
     show_media_controls: true,
+    show_skip_buttons: true,
     media_controls_size: 30,
     show_progress: true,
     show_volume: true,
@@ -621,6 +622,7 @@
     c.header_alignment = c.header_alignment === 'inherit' ? 'inherit' : ALIGNS[String(c.header_alignment).toLowerCase()] || 'inherit';
     c.header_layout = ['combined', 'split', 'split_reverse'].indexOf(c.header_layout) >= 0 ? c.header_layout : 'combined';
     c.show_media_controls = bool(c.show_media_controls, true);
+    c.show_skip_buttons = bool(c.show_skip_buttons, true);
     c.media_controls_size = Math.round(num(c.media_controls_size, 30, 24, 64));
     c.show_progress = bool(c.show_progress_bar != null ? c.show_progress_bar : c.show_progress, true);
     c.progress_bar_height = Math.round(num(c.progress_bar_height, 5, 2, 16));
@@ -1385,7 +1387,7 @@
       var vol = hasVol ? Math.round(Math.max(0, Math.min(1, Number(a.volume_level))) * 100) : -1;
       var volMode = (c.show_volume && (f & F_VOLUME_SET)) || (c.show_volume && hasVol) ? 'slider' : (c.show_volume && (f & F_VOLUME_STEP)) ? 'step' : '';
       var sig = [
-        track.entity, f, c.show_media_controls, c.show_volume, c.show_mute, c.show_power,
+        track.entity, f, c.show_media_controls, c.show_skip_buttons, c.show_volume, c.show_mute, c.show_power,
         c.show_progress, c.layout, c.media_controls_size,
         playing ? 'p' : isPaused ? 'z' : 'o', muted ? 'm' : '', volMode, vol
       ].join('|');
@@ -1399,9 +1401,9 @@
       if (c.show_mute && (f & F_VOLUME_MUTE)) {
         html += '<button class="cb" data-c="mute" title="Mute" aria-label="Mute">' + ico(muted ? 'volOff' : 'volHigh') + '</button>';
       }
-      if (f & F_PREV) html += '<button class="cb" data-c="prev" title="Previous" aria-label="Previous track">' + ico('prev') + '</button>';
+      if (c.show_skip_buttons) html += '<button class="cb" data-c="prev" title="Previous" aria-label="Previous track">' + ico('prev') + '</button>';
       html += '<button class="cb' + (playing ? ' playing' : '') + '" data-c="toggle" title="Play/Pause" aria-label="' + (playing ? 'Pause' : 'Play') + '">' + ico(playing ? 'pause' : 'play') + '</button>';
-      if (f & F_NEXT) html += '<button class="cb" data-c="next" title="Next" aria-label="Next track">' + ico('next') + '</button>';
+      if (c.show_skip_buttons) html += '<button class="cb" data-c="next" title="Next" aria-label="Next track">' + ico('next') + '</button>';
       if (volMode === 'slider') {
         html += '<div class="vol"><input type="range" min="0" max="100" step="1" value="' + Math.max(0, vol) + '" aria-label="Volume"><span class="vlab">' + Math.max(0, vol) + '%</span></div>';
       } else if (volMode === 'step') {
@@ -2117,6 +2119,7 @@
         ]],
         ['Media controls', [
           { name: 'show_media_controls', selector: { boolean: { } } },
+          { name: 'show_skip_buttons', selector: { boolean: { } } },
           { name: 'media_controls_size', selector: { number: { min: 24, max: 64, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
           { name: 'show_volume', selector: { boolean: { } } },
           { name: 'show_mute', selector: { boolean: { } } },
@@ -2197,7 +2200,7 @@
         show_lyrics: 'Show lyrics (album art when off)',
         show_intro: 'Show track intro before first lyric', intro_duration: 'Minimum intro duration', intro_font_size: 'Intro title size',
         show_media_controls: 'Show player controls', media_controls_size: 'Control button size',
-        show_volume: 'Volume control', show_mute: 'Mute button', show_power: 'Power button',
+        show_volume: 'Volume control', show_mute: 'Mute button', show_power: 'Power button', show_skip_buttons: 'Previous / next track buttons',
         show_progress: 'Show progress / seek bar', progress_bar_height: 'Progress bar height', progress_bar_color: 'Progress bar colour (CSS)',
         alignment: 'Lyrics alignment', font_family: 'Lyrics font', font_size: 'Lyrics font size', font_weight: 'Lyrics font weight',
         inactive_opacity: 'Inactive lyric opacity', active_scale: 'Active lyric scale',

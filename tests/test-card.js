@@ -1264,17 +1264,47 @@ function findVolInput(c) {
   await flush();
   eq('caption hidden when lyrics are shown', c.el.cap.hidden, true);
 
-  console.log('\ncontrols hide unsupported transport');
-  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
-  c.hass = hass({ 'media_player.spotify': (() => {
-    const st = ctrlState();
-    st.attributes.supported_features = F.PAUSE | F.SEEK;
-    return st;
-  })() });
+  console.log('\nskip buttons show even without advertised transport');
+  // Regression: prev/next were hidden whenever the player did not advertise
+  // PREVIOUS_TRACK/NEXT_TRACK. Many players (Music Assistant, cast groups)
+  // report supported_features: 0 yet still handle the skip services, so the
+  // buttons vanished. They now show by default and can be switched off.
+  const skipCard = (cfg) => {
+    const card = makeCard(cfg, [[{ track_name: 'Creep' }, CREEP]]);
+    card.hass = hass({ 'media_player.spotify': (() => {
+      const st = ctrlState();
+      st.attributes.supported_features = F.PAUSE | F.SEEK;
+      return st;
+    })() });
+    return card;
+  };
+  c = skipCard({});
   await flush();
-  eq('no prev button without F_PREV', !findBtn(c, 'prev'), true);
-  eq('no next button without F_NEXT', !findBtn(c, 'next'), true);
+  eq('prev shown without F_PREV', !!findBtn(c, 'prev'), true);
+  eq('next shown without F_NEXT', !!findBtn(c, 'next'), true);
   eq('toggle survives', !!findBtn(c, 'toggle'), true);
+
+  c = skipCard({ show_skip_buttons: false });
+  await flush();
+  eq('prev hidden when show_skip_buttons is off', !findBtn(c, 'prev'), true);
+  eq('next hidden when show_skip_buttons is off', !findBtn(c, 'next'), true);
+  eq('toggle survives with skip buttons off', !!findBtn(c, 'toggle'), true);
+
+  c = skipCard({ show_skip_buttons: true });
+  await flush();
+  eq('default config shows skip buttons', makeCard({}, []).config.show_skip_buttons, true);
+
+  // The clicks still drive the right service even when the player did not
+  // advertise the transport bit.
+  const svcCalls = [];
+  const st = ctrlState();
+  st.attributes.supported_features = F.PAUSE | F.SEEK;
+  c.hass = hass({ 'media_player.spotify': st }, (dom, svc) => svcCalls.push(svc));
+  await flush();
+  c._onClick({ target: findBtn(c, 'prev') });
+  c._onClick({ target: findBtn(c, 'next') });
+  eq('prev click calls media_previous_track', svcCalls[0], 'media_previous_track');
+  eq('next click calls media_next_track', svcCalls[1], 'media_next_track');
 
   console.log('\nseek scrub feedback');
   c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);

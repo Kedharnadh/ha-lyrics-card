@@ -29,11 +29,12 @@ raw 82.1 KB   ·   gzip ~21 KB
   looks for a *different release of the same song* that does have them, matches
   the text line by line, and transfers the timings across. If that fails it
   paces the lines at a readable rate.
-- **Media controls, gated by what the player supports.** Play/pause, next,
-  previous, mute, a volume slider (debounced), and an optional power button.
-  Buttons only appear when the player's `supported_features` say they work —
-  the volume slider becomes `+`/`−` buttons for players that only support
-  stepping.
+- **Media controls.** Play/pause, next, previous, mute, a volume slider
+  (debounced), and an optional power button. Previous/next show by default even
+  when the player doesn't advertise the transport feature (many cast groups and
+  Music Assistant players still handle the skip services); set
+  `show_skip_buttons: false` to hide them. The volume slider becomes `+`/`−`
+  buttons for players that only support stepping.
 - **Seek.** A progress bar under the lyrics; drag anywhere on it to jump and it
   issues `media_seek`.
 - **No duplicate lyrics.** Two devices playing the same track are grouped into
@@ -122,6 +123,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `header_alignment` | `inherit` | Header text alignment |
 | `track_info_font_size` | `13` | Title/artist subtitle size in px |
 | `show_media_controls` | `true` | Show the player control buttons |
+| `show_skip_buttons` | `true` | Previous/next track buttons. Shown even when the player doesn't advertise the transport feature |
 | `media_controls_size` | `30` | Control button size in px |
 | `show_volume` | `true` | Volume slider (or `+`/`−` when unsupported) |
 | `show_mute` | `true` | Mute button |
