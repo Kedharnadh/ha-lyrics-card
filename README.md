@@ -53,10 +53,15 @@ raw 82.1 KB   ·   gzip ~21 KB
   automatically.
 - **Art when there are no lyrics.** When a track has no lyrics, or you turn lyrics
   off with `show_lyrics: false`, the card drops the blur and shows the artwork
-  full size instead, with the player controls still underneath. Media controls
-  stay visible whenever something is playing, even mid-track with no lyrics.
+  full size with the track title and artist captioned over it, and the player
+  controls still underneath. Media controls stay visible whenever something is
+  playing, even mid-track with no lyrics.
 - **Make it yours.** Five layouts, header styles, card height, fonts, colours,
   art size, blur and dimming are all configurable — see [Options](#options).
+- **Accessible.** Controls, the seek bar and the player dots are keyboard
+  reachable with ARIA labels and roles, the status line is a live region, and a
+  **Retry** button appears when a lookup finds nothing so you can re-run it. Any
+  UI copy can be translated or overridden via the `strings` option.
 
 ## Installation (HACS)
 
@@ -120,7 +125,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `media_controls_size` | `30` | Control button size in px |
 | `show_volume` | `true` | Volume slider (or `+`/`−` when unsupported) |
 | `show_mute` | `true` | Mute button |
-| `show_power` | `false` | Power (toggle) button |
+| `show_power` | `false` | Power button; sends `turn_on`/`turn_off` for the player's current state |
 | `show_progress` | `true` | Progress bar with seek support |
 | `background_mode` | `artwork` | `artwork`, `theme` or `transparent` |
 | `background_opacity` | `1` | Card backdrop opacity (0–1) |
@@ -145,6 +150,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `music_assistant_url` | — | MA server, e.g. `http://ma.local:8095` |
 | `music_assistant_token` | — | MA long-lived access token |
 | `music_assistant_timeout` | `8` | Seconds to wait for MA before falling back (2–30) |
+| `strings` | `{}` | Override UI copy, e.g. `strings: { nothing_playing: "Rien en lecture" }` |
 
 Legacy names `background_blur`/`background_dim`/`background_veil` (and `align`,
 `show_progress`) still work as aliases for `artwork_blur`/`artwork_opacity`/
@@ -164,7 +170,7 @@ Width is the one thing there is no option for — see [Card width](#card-width).
 - `two_line` — the active line and the next one both full opacity.
 - `compact` — smaller active line, tighter spacing.
 - `minimal` — lyrics only, no header.
-- `karaoke` — shows three lines with the next line emphasised.
+- `karaoke` — shows the previous, active and next line, with the next line emphasised.
 
 `height` / `card_height` set a fixed card height and are clamped; otherwise the
 card sizes itself from `max_lines × line_height`.

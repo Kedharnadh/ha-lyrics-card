@@ -658,7 +658,7 @@ function findVolInput(c) {
   c._onClick({ target: findBtn(c, 'prev') });
   eq('prev calls media_previous_track', calls[calls.length - 1].svc, 'media_previous_track');
   c._onClick({ target: findBtn(c, 'power') });
-  eq('power calls toggle', calls[calls.length - 1].svc, 'toggle');
+  eq('power turns off while playing', calls[calls.length - 1].svc, 'turn_off');
   c._onClick({ target: findBtn(c, 'mute') });
   eq('mute calls volume_mute', calls[calls.length - 1].svc, 'volume_mute');
   eq('mute payload toggles to muted', calls[calls.length - 1].data, {
@@ -1066,6 +1066,140 @@ function findVolInput(c) {
   eq('fixed height + lyrics -> no takeover', heroBox(c).on, false);
   eq('fixed height + lyrics -> art element hidden', heroBox(c).hidden, true);
   eq('fixed height + lyrics -> backdrop stays', c.el.bg.hidden, false);
+
+  console.log('\nm-disabled lyrics marquee does not spawn parallel frames');
+  // Regression: _marqueeSync runs every tick, and _marqueeStart was not guarded,
+  // so each call armed another self-perpetuating rAF loop.
+  global.__resetFrames(4000);
+  let mq = makeCard({ plain_lyrics_auto_scroll: false }, plainTable);
+  mq.hass = plainState();
+  await flush();
+  eq('marquee armed', mq._driftOn(), true);
+  const armedRaf = mq._raf;
+  mq._marqueeSync();
+  eq('re-sync keeps the same frame', mq._raf, armedRaf);
+  mq._marqueeSync();
+  mq._marqueeSync();
+  eq('repeated sync never multiplies frames', mq._raf, armedRaf);
+  mq._marqueeStop();
+  eq('stop clears the frame', mq._raf, 0);
+  global.__resetFrames();
+
+  console.log('\nkaraoke three-line window');
+  c = makeCard({ layout: 'karaoke' }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 30) });
+  await flush();
+  eq('karaoke shows three lines', c.lineEls.length, 3);
+  eq('karaoke active is the middle line', c.lineEls[1].textContent, 'Youre just like an angel');
+  eq('karaoke active marked', /(^|\s)on(\s|$)/.test(c.lineEls[1].className), true);
+  eq('karaoke next line marked', /(^|\s)next(\s|$)/.test(c.lineEls[2].className), true);
+  eq('karaoke stage wraps three spaced lines', c.el.stage.style.height, String(Math.round(38 * 3 * 1.25)) + 'px');
+
+  console.log('\nactive-line fitting vs a hidden card');
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  const actEl = c.lineEls[c.active];
+  actEl.clientWidth = 0;
+  actEl.scrollWidth = 100000;
+  c._fitActiveLine(actEl);
+  eq('unmeasured card keeps the full active size', actEl.style.fontSize, '29px');
+  actEl.clientWidth = 120;
+  c._fitActiveLine(actEl);
+  eq('narrow card shrinks the active line', parseInt(actEl.style.fontSize, 10) < 29, true);
+
+  console.log('\nretry after a missing track');
+  cache.clear();
+  c = makeCard({}, []);
+  c.hass = hass({ 'media_player.radio': player('media_player.radio', 'zz unknown tune 991', 'nobody', '', 200, 5) });
+  await flush();
+  eq('retry shown when nothing is found', c.el.retry.hidden, false);
+  const RETRIED = {
+    id: 7, trackName: 'zz unknown tune 991', artistName: 'nobody', duration: 200,
+    instrumental: false, plainLyrics: 'now here\nhere again\nand again\nonce more'
+  };
+  global.fetch = fakeFetch([[{ track_name: 'zz unknown tune 991' }, RETRIED]]);
+  c._onClick({ target: c.el.retry });
+  await flush();
+  eq('retry refetches the track', c.data && c.data.kind, 'static');
+  eq('retry hidden once lyrics arrive', c.el.retry.hidden, true);
+
+  console.log('\ngrid options and strings');
+  c = makeCard({}, []);
+  eq('grid options exposed', !!c.getGridOptions() && c.getGridOptions().columns !== undefined, true);
+  c = makeCard({ strings: { nothing_playing: 'Rien en lecture' } }, []);
+  c.hass = hass({ 'media_player.tv': mkState({ state: 'off', media_title: 'x' }) });
+  eq('strings override the default copy', c.el.sub.textContent, 'Rien en lecture');
+
+  const findMsg = (card) => {
+    let m = null;
+    card.el.lines._walk((n) => { if (!m && /(^|\s)msg(\s|$)/.test(n.className)) m = n; });
+    return m;
+  };
+
+  console.log('\nempty + loading states');
+  cache.clear();
+  const FRESH = {
+    id: 42, trackName: 'Fresh One', artistName: 'Tester', duration: 100, instrumental: false,
+    plainLyrics: '', syncedLyrics: '[00:01.00] hello\n[00:02.00] world'
+  };
+  c = makeCard({}, [[{ track_name: 'Fresh One' }, FRESH]]);
+  c.hass = hass({ 'media_player.fresh': player('media_player.fresh', 'Fresh One', 'Tester', '', 100, 0) });
+  eq('empty stage carries the centred empty class', c.el.lines.classList.contains('empty'), true);
+  eq('fetching shows a loading pulse', /(^|\s)loading(\s|$)/.test(findMsg(c).className), true);
+  await flush();
+  eq('empty class cleared once lyrics arrive', c.el.lines.classList.contains('empty'), false);
+
+  c = makeCard({}, []);
+  c.hass = hass({ 'media_player.radio': player('media_player.radio', 'nothing here 7', 'nobody', '', 200, 5) });
+  await flush();
+  eq('a miss keeps the centred empty layout', c.el.lines.classList.contains('empty'), true);
+  eq('a miss still reads clearly', c.el.lines.textContent, 'No lyrics found');
+  eq('a loaded miss is not pulsing', /(^|\s)loading(\s|$)/.test(findMsg(c).className), false);
+
+  console.log('\nart caption');
+  cache.clear();
+  c = makeCard({}, []);
+  c.hass = hass({ 'media_player.art': mkState({
+    media_title: 'Ambient', media_artist: 'Someone', entity_picture: '/local/a.jpg',
+    media_duration: 100, media_position: 0
+  }) });
+  await flush();
+  eq('art mode on', c.el.card.classList.contains('artmode'), true);
+  eq('caption shown over the art', c.el.cap.hidden, false);
+  eq('caption carries the title', c.el.capT.textContent, 'Ambient');
+  eq('caption carries the artist', c.el.capA.textContent, 'Someone');
+
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 20) });
+  await flush();
+  eq('caption hidden when lyrics are shown', c.el.cap.hidden, true);
+
+  console.log('\ncontrols hide unsupported transport');
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': (() => {
+    const st = ctrlState();
+    st.attributes.supported_features = F.PAUSE | F.SEEK;
+    return st;
+  })() });
+  await flush();
+  eq('no prev button without F_PREV', !findBtn(c, 'prev'), true);
+  eq('no next button without F_NEXT', !findBtn(c, 'next'), true);
+  eq('toggle survives', !!findBtn(c, 'toggle'), true);
+
+  console.log('\nseek scrub feedback');
+  c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': ctrlState() });
+  await flush();
+  c.el.track.getBoundingClientRect = () => ({ left: 0, width: 200 });
+  c._onSeekDown({ button: 0, clientX: 40, target: c.el.track });
+  eq('scrub class while dragging', c.el.track.classList.contains('scrub'), true);
+  c._onSeekUp({});
+  eq('scrub class cleared on release', c.el.track.classList.contains('scrub'), false);
+
+  console.log('\nintro font size');
+  c = makeCard({ intro_font_size: 72 }, [[{ track_name: 'Creep' }, CREEP]]);
+  eq('intro size published as a css var', c.style.getPropertyValue('--it'), '72px');
 
   console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);

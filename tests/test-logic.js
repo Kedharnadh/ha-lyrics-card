@@ -17,7 +17,7 @@ global.localStorage = (() => {
 
 eval(src.replace(
   'window.customCards = window.customCards',
-  'window.__x={squash:squash,parseLrc:parseLrc,fillGaps:fillGaps,transferTimings:transferTimings,rank:rank,splitPlain:splitPlain,videoTitle:videoTitle,videoArtist:videoArtist};\n  window.customCards = window.customCards'
+  'window.__x={squash:squash,parseLrc:parseLrc,fillGaps:fillGaps,transferTimings:transferTimings,rank:rank,splitPlain:splitPlain,videoTitle:videoTitle,videoArtist:videoArtist,maTrackRef:maTrackRef,maSocketUrl:maSocketUrl};\n  window.customCards = window.customCards'
 ));
 
 const X = global.window.__x;
@@ -127,6 +127,24 @@ eq('vevo artist dropped', X.videoArtist('Artist - Vevo'), 'Artist');
 eq('youtube alone dropped', X.videoArtist('YouTube'), '');
 eq('yt alone dropped', X.videoArtist('yt'), '');
 eq('channel kept', X.videoArtist('Some Channel'), 'Some Channel');
+
+console.log('\nmaTrackRef');
+eq('old-style uri', X.maTrackRef('library://track/12345'), { provider: 'library', item_id: '12345', uri: 'library://track/12345' });
+eq('new-style uri', X.maTrackRef('spotify:track:4cOdK2wGLETKBW3PvgPWqT'), { provider: 'spotify', item_id: '4cOdK2wGLETKBW3PvgPWqT', uri: 'spotify:track:4cOdK2wGLETKBW3PvgPWqT' });
+eq('album uri rejected', X.maTrackRef('library://album/1'), null);
+eq('plain url rejected', X.maTrackRef('https://stream.example/song.mp3'), null);
+eq('garbage rejected', X.maTrackRef('nope'), null);
+eq('null rejected', X.maTrackRef(null), null);
+eq('empty rejected', X.maTrackRef(''), null);
+eq('item id with space rejected', X.maTrackRef('library://track/has space'), null);
+
+console.log('\nmaSocketUrl');
+eq('http becomes ws with /ws', X.maSocketUrl('http://ma.local:8095'), 'ws://ma.local:8095/ws');
+eq('https becomes wss', X.maSocketUrl('https://ma.example'), 'wss://ma.example:8095/ws');
+eq('host without scheme gets http', X.maSocketUrl('ma.local'), 'ws://ma.local:8095/ws');
+eq('existing /ws path kept', X.maSocketUrl('ws://ma.local:8095/ws'), 'ws://ma.local:8095/ws');
+eq('empty rejected', X.maSocketUrl(''), '');
+eq('nonsense scheme rejected', X.maSocketUrl('ftp://ma.local'), '');
 
 console.log('\nresult: ' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

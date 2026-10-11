@@ -434,8 +434,27 @@
     });
   }
 
+  // Default UI copy. hass.localize is consulted first (so a translation can be
+  // supplied without shipping an integration), then the optional `strings`
+  // config override, then these English fallbacks.
+  var STRINGS = {
+    lyrics: 'Lyrics',
+    nothing_playing: 'Nothing playing',
+    no_players: 'No media players found',
+    fetching: 'Fetching lyrics\u2026',
+    not_found: 'No lyrics found',
+    instrumental: 'Instrumental',
+    lyrics_hidden: 'Lyrics hidden',
+    playing: 'Playing',
+    paused: 'Paused',
+    retry: 'Retry',
+    sync: 'Sync',
+    reset: 'Reset'
+  };
+
   var DEFAULTS = {
     entities: [],
+    strings: {},
     layout: 'focus',
     alignment: 'center',
     font_family: 'system-ui',
@@ -629,6 +648,7 @@
     c.music_assistant_url = str(c.music_assistant_url);
     c.music_assistant_token = str(c.music_assistant_token);
     c.music_assistant_timeout = num(c.music_assistant_timeout, 8, 2, 30);
+    c.strings = raw.strings && typeof raw.strings === 'object' && !Array.isArray(raw.strings) ? raw.strings : {};
     return c;
   }
 
@@ -636,7 +656,7 @@
     ':host{display:block}',
     '*{box-sizing:border-box}',
     'ha-card{position:relative;isolation:isolate;display:block;box-shadow:none;border-radius:16px;padding:10px 12px 8px;overflow:hidden;background:var(--ha-card-background,var(--card-background-color,#1c1c1e))}',
-    ':host{--fb:26px;--lb:38px;--fw:700;--ff:system-ui;--al:center;--as:1.12;--io:.35;--npc-ts:none;--bg-blur:14px;--bg-dim:1;--bg-veil:.4;--bb:10px;--bo:.22;--art-size:42px;--static-size:18px;--th:13px;--seek-h:5px;--seek-c:var(--primary-color);--ctrl:30px;--ha-lyrics-primary:var(--primary-text-color,#e1e1e1);--ha-lyrics-secondary:var(--secondary-text-color,#9b9b9b);--ha-lyrics-accent:var(--primary-color,#03a9f4)}',
+    ':host{--fb:26px;--lb:38px;--fw:700;--ff:system-ui;--al:center;--as:1.12;--io:.35;--npc-ts:none;--it:48px;--bg-blur:14px;--bg-dim:1;--bg-veil:.4;--bb:10px;--bo:.22;--art-size:42px;--static-size:18px;--th:13px;--seek-h:5px;--seek-c:var(--primary-color);--ctrl:30px;--ha-lyrics-primary:var(--primary-text-color,#e1e1e1);--ha-lyrics-secondary:var(--secondary-text-color,#9b9b9b);--ha-lyrics-accent:var(--primary-color,#03a9f4)}',
     '.bg{position:absolute;z-index:0;inset:calc(-1 * var(--bg-blur) - 16px);background-size:cover;background-position:center;filter:blur(var(--bg-blur));opacity:var(--bg-dim);pointer-events:none}',
     '.bg[hidden]{display:none}',
     'ha-card::after{content:"";position:absolute;z-index:0;inset:0;display:none;background:var(--ha-card-background,var(--card-background-color,#1c1c1e));opacity:var(--bg-veil);pointer-events:none}',
@@ -644,9 +664,10 @@
     'ha-card.has-bg.adapt::after{opacity:1;background:linear-gradient(rgba(0,0,0,var(--bo)),rgba(0,0,0,var(--bo)));backdrop-filter:blur(var(--bb)) brightness(.8);-webkit-backdrop-filter:blur(var(--bb)) brightness(.8)}',
     '.r{position:absolute;z-index:4;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:6px;pointer-events:none}',
     '.r.on{display:flex}',
-    '.r-t{font:700 48px/1.15 var(--ff);color:var(--ha-lyrics-primary,#e1e1e1)}',
-    '.r-a{font:400 var(--th) var(--ff);color:var(--ha-lyrics-secondary,#9b9b9b)}',
+    '.r-t{font:700 var(--it)/1.15 var(--ff);color:var(--ha-lyrics-primary,#e1e1e1);text-shadow:0 2px 20px rgba(0,0,0,.35)}',
+    '.r-a{font:400 calc(var(--it) * .38) var(--ff);color:var(--ha-lyrics-secondary,#9b9b9b)}',
     '.wrap{position:relative;z-index:2;display:flex;flex-direction:column;min-height:0}',
+    '.wrap.intro-on .head,.wrap.intro-on .vp,.wrap.intro-on .foot{opacity:0;pointer-events:none;transition:opacity .25s ease}',
     'ha-card.fixed .wrap{height:100%}',
     '.head{display:flex;align-items:center;gap:10px;min-height:38px}',
     '.head[hidden]{display:none}',
@@ -658,9 +679,11 @@
     '.who.split_reverse .title{order:2;text-align:right}',
     '.title{font-size:calc(var(--th) + 2px);font-weight:600;color:var(--ha-lyrics-primary,#e1e1e1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.sub{font-size:var(--th);color:var(--ha-lyrics-secondary,#9b9b9b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}',
-    '.dots{display:flex;gap:5px;align-items:center;flex:none}',
-    '.dot{width:6px;height:6px;border-radius:50%;background:var(--disabled-text-color,#9a9a9a);opacity:.45;cursor:pointer;transition:opacity .15s,width .15s}',
-    '.dot.on{opacity:1;background:var(--ha-lyrics-accent);width:16px;border-radius:3px}',
+    '.dots{display:flex;gap:0;align-items:center;flex:none;margin:-6px -4px}',
+    '.dot{position:relative;display:flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;background:none;cursor:pointer}',
+    '.dot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--disabled-text-color,#9a9a9a);opacity:.45;transition:opacity .15s,width .15s,background .15s}',
+    '.dot:hover::before{opacity:.85}',
+    '.dot.on::before{opacity:1;background:var(--ha-lyrics-accent);width:16px;border-radius:3px}',
     '.controls{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px}',
     '.controls[hidden]{display:none}',
     '.cb{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:var(--ctrl);height:var(--ctrl);min-width:0;border-radius:8px;color:var(--ha-lyrics-primary,#e1e1e1);font-size:calc(var(--ctrl) * .72);line-height:1;user-select:none;-webkit-tap-highlight-color:transparent}',
@@ -671,14 +694,18 @@
     '.vol{flex:0 1 140px;display:flex;align-items:center;gap:6px;min-width:0;margin:0 4px;margin-left:auto}',
     '.vol[hidden]{display:none}',
     '.vol input[type=range]{flex:1;min-width:0;accent-color:var(--ha-lyrics-accent);height:20px;margin:0}',
-    '.vol .vlab{font-size:12px;color:var(--ha-lyrics-secondary,#9b9b9b);min-width:32px;text-align:right;font-variant-numeric:tabular-nums}',
+    '.vol .vlab{font-size:12px;color:var(--ha-lyrics-secondary,#9b9b9b);min-width:32px;text-align:right;font-variant-numeric:tabular-nums;opacity:0;transition:opacity .15s}',
+    '.vol:hover .vlab,.vol:focus-within .vlab{opacity:1}',
     '.vstep{all:unset;cursor:pointer;color:var(--ha-lyrics-primary,#e1e1e1);font-size:calc(var(--ctrl) * .6);padding:2px 10px;border-radius:6px}',
     '.vstep:hover{background:var(--secondary-background-color,#8883)}',
     '.vstep svg{display:block;width:calc(var(--ctrl) * .55);height:calc(var(--ctrl) * .55)}',
     '.seek{position:relative;display:flex;align-items:center;gap:8px;margin:10px -12px calc(-8px);padding:0 12px;border-top:1px solid rgba(127,127,127,.15)}',
     '.seek[hidden]{display:none}',
-    '.track{position:relative;flex:1;height:var(--seek-h);border-radius:99px;background:var(--divider-color,rgba(127,127,127,.3));cursor:pointer;overflow:hidden}',
-    '.track i{display:block;height:100%;background:var(--seek-c);border-radius:99px;width:0}',
+    '.track{position:relative;flex:1;height:var(--seek-h);border-radius:99px;background:var(--divider-color,rgba(127,127,127,.3));cursor:pointer;transition:height .15s}',
+    '.track i{position:relative;display:block;height:100%;background:var(--seek-c);border-radius:99px;width:0}',
+    '.track i::after{content:"";position:absolute;right:0;top:50%;width:11px;height:11px;border-radius:50%;background:var(--seek-c);transform:translate(50%,-50%) scale(.8);box-shadow:0 1px 4px rgba(0,0,0,.45);transition:transform .15s}',
+    '.track:hover,.track:focus-visible,.track.scrub{height:calc(var(--seek-h) + 3px)}',
+    '.track:hover i::after,.track:focus-visible i::after,.track.scrub i::after{transform:translate(50%,-50%) scale(1)}',
     '.tpos,.tdur{font-size:11px;color:var(--ha-lyrics-secondary,#9b9b9b);font-variant-numeric:tabular-nums;min-width:34px;text-align:center}',
     '.vp{margin:4px -12px 0;overflow:hidden;touch-action:pan-y}',
     '.pane{padding:0 12px;transition:transform .22s cubic-bezier(.4,0,.2,1),opacity .22s;will-change:transform}',
@@ -692,12 +719,15 @@
     'ha-card.fixed.artmode .vp{flex:1 1 0;min-height:0}',
     'ha-card.fixed.artmode .pane,ha-card.fixed.artmode .stage{height:100%}',
     '.lines{min-height:100%}',
+    '.lines.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;text-align:center}',
     '.lines.fixed{display:flex;flex-direction:column;justify-content:center}',
     '.lines.karaoke .l{line-height:calc(var(--lb) * 1.25)}',
-    '.l{font:var(--fw) var(--fb)/var(--lb) var(--ff);color:var(--ha-lyrics-secondary,#9b9b9b);opacity:var(--io);padding:0 4px;border-radius:6px;text-shadow:var(--npc-ts,none);text-align:var(--al);transition:opacity .25s,color .25s,font-size .15s}',
-    '.l.on{color:var(--ha-lyrics-primary,#e1e1e1);opacity:1;font-weight:var(--fw)}',
-    '.l.next{opacity:.55}',
+    '.l{font:var(--fw) var(--fb)/var(--lb) var(--ff);color:var(--ha-lyrics-secondary,#9b9b9b);opacity:var(--io);padding:0 8px;border-radius:10px;text-shadow:var(--npc-ts,none);text-align:var(--al);transition:opacity .25s,color .25s,font-size .15s,background .25s}',
+    '.l.on{color:var(--ha-lyrics-primary,#e1e1e1);opacity:1;font-weight:var(--fw);background:transparent;background:color-mix(in srgb,var(--ha-lyrics-accent) 16%,transparent)}',
+    '.l.next{opacity:.72}',
     '.l.msg{opacity:.6;font-style:italic;color:var(--ha-lyrics-secondary,#9b9b9b);text-align:center}',
+    '.l.msg.loading{animation:lypulse 1.4s ease-in-out infinite}',
+    '@keyframes lypulse{0%,100%{opacity:.35}50%{opacity:.85}}',
     '.plain{color:var(--ha-lyrics-secondary,#9b9b9b);font-size:var(--static-size);line-height:1.6;text-align:var(--al);padding:4px;white-space:pre-wrap;opacity:.9;text-shadow:var(--npc-ts,none)}',
     '.foot{display:flex;align-items:center;gap:8px;margin-top:6px;min-height:22px}',
     '.status{flex:1;font-size:11px;color:var(--ha-lyrics-secondary,#9b9b9b);opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -707,7 +737,15 @@
     '.sync button{all:unset;cursor:pointer;font-size:11px;color:var(--ha-lyrics-secondary,#9b9b9b);padding:2px 5px;border-radius:6px}',
     '.sync button:hover{background:var(--secondary-background-color,#8883);color:var(--ha-lyrics-primary,#e1e1e1)}',
     '.sync .sl{font-size:11px;color:var(--ha-lyrics-secondary,#9b9b9b)}',
-    '.sync .sv{font-size:11px;color:var(--ha-lyrics-accent);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}'
+    '.sync .sv{font-size:11px;color:var(--ha-lyrics-accent);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}',
+    '.retry{all:unset;cursor:pointer;flex:none;font-size:12px;font-weight:600;color:var(--ha-lyrics-accent);padding:4px 12px;border-radius:8px;border:1px solid currentColor;opacity:.9;line-height:1.4}',
+    '.retry:hover{opacity:1;color:var(--ha-lyrics-primary,#fff);background:var(--ha-lyrics-accent)}',
+    '.retry[hidden]{display:none}',
+    '.cap{position:absolute;z-index:2;left:0;right:0;bottom:0;padding:14px 12px 10px;text-align:center;background:linear-gradient(transparent,rgba(0,0,0,.6));pointer-events:none}',
+    '.cap[hidden]{display:none}',
+    '.cap-t{font:600 calc(var(--th) + 2px)/1.3 var(--ff);color:var(--ha-lyrics-primary,#e1e1e1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.cap-a{font:400 var(--th)/1.3 var(--ff);color:var(--ha-lyrics-secondary,#9b9b9b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.track:focus-visible,.cb:focus-visible,.dot:focus-visible,.retry:focus-visible{outline:2px solid var(--ha-lyrics-accent);outline-offset:2px}'
   ].join('');
 
   var MARKUP = [
@@ -721,30 +759,31 @@
     '      <div class="dots"></div>',
     '    </div>',
     '    <div class="vp"><div class="pane">',
-    '      <div class="stage"><div class="lines"></div><img class="hero" hidden alt=""></div>',
+    '      <div class="stage"><div class="lines"></div><img class="hero" hidden alt=""><div class="cap" hidden><div class="cap-t"></div><div class="cap-a"></div></div></div>',
     '    </div></div>',
     '    <div class="foot">',
-    '      <div class="status"></div>',
+    '      <div class="status" role="status" aria-live="polite"></div>',
+    '      <button class="retry" data-c="retry" aria-label="Retry lyrics" hidden></button>',
     '      <div class="sync">',
-'        <span class="sl">Sync</span>',
-'        <button data-c="sync-" title="Offset \u22120.5s">\u2212</button>',
-'        <input type="range" min="-10" max="10" step="0.01">',
-'        <button data-c="sync+" title="Offset +0.5s">+</button>',
-'        <button data-c="syncreset" title="Reset offset">Reset</button>',
-'        <span class="sv"></span>',
+    '        <span class="sl">Sync</span>',
+    '        <button data-c="sync-" title="Offset \u22120.5s" aria-label="Sync offset minus 0.5 seconds">\u2212</button>',
+    '        <input type="range" min="-10" max="10" step="0.01" aria-label="Sync offset">',
+    '        <button data-c="sync+" title="Offset +0.5s" aria-label="Sync offset plus 0.5 seconds">+</button>',
+    '        <button data-c="syncreset" title="Reset offset" aria-label="Reset sync offset">Reset</button>',
+    '        <span class="sv"></span>',
     '      </div>',
     '    </div>',
     '    <div class="controls" hidden>',
-    '      <button class="cb" data-c="mute" title="Mute"></button>',
-    '      <button class="cb" data-c="prev" title="Previous"></button>',
-    '      <button class="cb" data-c="toggle" title="Play/Pause"></button>',
-    '      <button class="cb" data-c="next" title="Next"></button>',
-    '      <div class="vol" hidden><input type="range" min="0" max="100" step="1"><span class="vlab"></span></div>',
-    '      <button class="cb" data-c="power" title="Power"></button>',
+    '      <button class="cb" data-c="mute" title="Mute" aria-label="Mute"></button>',
+    '      <button class="cb" data-c="prev" title="Previous" aria-label="Previous track"></button>',
+    '      <button class="cb" data-c="toggle" title="Play/Pause" aria-label="Play"></button>',
+    '      <button class="cb" data-c="next" title="Next" aria-label="Next track"></button>',
+    '      <div class="vol" hidden><input type="range" min="0" max="100" step="1" aria-label="Volume"><span class="vlab"></span></div>',
+    '      <button class="cb" data-c="power" title="Power" aria-label="Power"></button>',
     '    </div>',
     '    <div class="seek" hidden>',
     '      <span class="tpos"></span>',
-    '      <div class="track"><i></i></div>',
+    '      <div class="track" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100"><i></i></div>',
     '      <span class="tdur"></span>',
     '    </div>',
     '  </div>',
@@ -813,7 +852,11 @@
           stage: this.root.querySelector('.stage'),
           lines: this.root.querySelector('.lines'),
           hero: this.root.querySelector('.hero'),
+          cap: this.root.querySelector('.cap'),
+          capT: this.root.querySelector('.cap-t'),
+          capA: this.root.querySelector('.cap-a'),
           status: this.root.querySelector('.status'),
+          retry: this.root.querySelector('.retry'),
           sync: this.root.querySelector('.sync'),
           syncIn: this.root.querySelector('.sync input'),
           syncVal: this.root.querySelector('.sv'),
@@ -829,9 +872,12 @@
         this._onDown = this._onDown.bind(this);
         this._onMove = this._onMove.bind(this);
         this._onUp = this._onUp.bind(this);
+        this._onKey = this._onKey.bind(this);
+        this._onResize = this._onResize.bind(this);
         this._tick = this._tick.bind(this);
         this._marqTouch = this._marqTouch.bind(this);
         e.card.addEventListener('click', this._onClick);
+        e.card.addEventListener('keydown', this._onKey);
         e.card.addEventListener('pointerdown', this._onSeekDown);
         e.card.addEventListener('pointermove', this._onSeekMove);
         e.card.addEventListener('pointerup', this._onSeekUp);
@@ -844,6 +890,13 @@
         e.vp.addEventListener('pointercancel', this._onUp);
         e.stage.addEventListener('wheel', this._marqTouch, { passive: true });
         e.stage.addEventListener('touchmove', this._marqTouch, { passive: true });
+        if (typeof window !== 'undefined' && window.addEventListener) {
+          window.addEventListener('resize', this._onResize);
+        }
+        if (typeof ResizeObserver === 'function') {
+          this._ro = new ResizeObserver(this._onResize);
+          this._ro.observe(e.card);
+        }
       }
       if (!this.timer) this.timer = setInterval(this._tick, TICK);
       this._metrics();
@@ -856,6 +909,10 @@
     disconnectedCallback() {
       if (this.timer) { clearInterval(this.timer); this.timer = null; }
       this._marqueeStop();
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('resize', this._onResize);
+      }
+      if (this._ro) { this._ro.disconnect(); this._ro = null; }
     }
 
     setConfig(cfg) {
@@ -890,6 +947,12 @@
       return Math.max(2, Math.ceil(h / 50) + 1);
     }
 
+    // Default span in the Sections view: full width, but still free to drop to
+    // a quarter-width column so it can sit beside other cards.
+    getGridOptions() {
+      return { columns: 'full', min_columns: 4, min_rows: 2 };
+    }
+
     _metrics() {
       if (!this.config || !this.el) return;
       var c = this.config;
@@ -919,6 +982,7 @@
       s.setProperty('--al', c.alignment);
       s.setProperty('--as', String(c.active_scale));
       s.setProperty('--io', String(c.inactive_opacity));
+      s.setProperty('--it', c.intro_font_size + 'px');
       s.setProperty('--bg-blur', c.artwork_blur + 'px');
       s.setProperty('--bg-dim', String(c.artwork_opacity));
       s.setProperty('--bg-veil', String(c.artwork_overlay_opacity));
@@ -944,12 +1008,14 @@
       if (this.data && this.data.kind === 'static') return c.max_lines * c.line_height;
       if (c.layout === 'compact' || c.layout === 'minimal') return c.line_height;
       if (c.layout === 'two_line') return c.line_height * 2;
+      if (c.layout === 'karaoke') return Math.round(c.line_height * 3 * 1.25);
       return c.max_lines * c.line_height;
     }
 
     _isFixed() {
       var c = this.config;
-      return c && (c.layout === 'compact' || c.layout === 'two_line' || c.layout === 'minimal');
+      return c && (c.layout === 'compact' || c.layout === 'two_line' ||
+        c.layout === 'minimal' || c.layout === 'karaoke');
     }
 
     _collect(states) {
@@ -1057,6 +1123,7 @@
         this._artMode = on;
         e.card.classList.toggle('artmode', on);
         e.hero.hidden = !on;
+        if (e.cap) e.cap.hidden = !on;
       }
       if (!on) return;
       var h = e.stage.clientHeight;
@@ -1156,15 +1223,22 @@
       var c = this.config;
       this._art(track);
       if (e.syncIn.value == null || Number(e.syncIn.value) !== this.offset) e.syncIn.value = String(this.offset || 0);
+      if (e.sync) {
+        var sl = e.sync.querySelector('.sl');
+        if (sl) this._setText(sl, this._t('sync'));
+        var rb0 = e.sync.querySelector('[data-c="syncreset"]');
+        if (rb0) this._setText(rb0, this._t('reset'));
+      }
+      this._paintRetry();
       var headerOn = !!(track && c.layout !== 'minimal' && c.show_header !== false);
       e.head.hidden = !headerOn;
       e.wrap.classList.toggle('intro-on', false);
       if (!track) {
-        this._setText(e.title, 'Lyrics');
+        this._setText(e.title, this._t('lyrics'));
         var any = 0;
         var s = this._hass.states || {};
         for (var id in s) { if (id.indexOf('media_player.') === 0) { any++; } }
-        this._setText(e.sub, any ? 'Nothing playing' : 'No media players found');
+        this._setText(e.sub, any ? this._t('nothing_playing') : this._t('no_players'));
         this._setText(e.status, '');
         if (this._dots !== 0) { e.dots.textContent = ''; this._dots = 0; }
         e.dots.style.display = 'none';
@@ -1172,6 +1246,8 @@
       }
       this._setText(e.splashT, track.title);
       this._setText(e.splashA, track.artist || '');
+      if (e.capT) this._setText(e.capT, track.title);
+      if (e.capA) this._setText(e.capA, track.artist || '');
       var states = this._hass.states || {};
       var friendly = (states[track.entity] || {}).attributes;
       friendly = (friendly && friendly.friendly_name) || track.entity;
@@ -1195,6 +1271,10 @@
           var d = document.createElement('div');
           d.className = 'dot' + (i === this.idx ? ' on' : '');
           d.dataset.i = String(i);
+          d.setAttribute('role', 'button');
+          d.setAttribute('tabindex', '0');
+          d.setAttribute('aria-label', 'Show player ' + (i + 1));
+          if (i === this.idx) d.setAttribute('aria-current', 'true');
           e.dots.appendChild(d);
         }
         this._dots = sig;
@@ -1203,13 +1283,28 @@
       var d = this.data;
       var st = '';
       if (!d) st = track && track.named === false ? this._stateText() : this.msg || '';
-      else if (d.kind === 'instrumental') st = 'Instrumental';
+      else if (d.kind === 'instrumental') st = this._t('instrumental');
       else if (d.kind === 'synced') {
         st = d.source === 'music_assistant' ? 'Music Assistant \u00b7 synced' : d.source === 'lrclib' ? 'LRCLIB \u00b7 synced' : 'synced';
       } else {
         st = d.source === 'music_assistant' ? 'Music Assistant \u00b7 lyrics' : 'LRCLIB \u00b7 lyrics';
       }
       this._setText(e.status, st);
+    }
+
+    // Resolve a UI string: per-card `strings` override, then hass.localize (so a
+    // translation can be provided without an integration), then English.
+    _t(key) {
+      var c = this.config;
+      if (c && c.strings && typeof c.strings[key] === 'string' && c.strings[key]) return c.strings[key];
+      var h = this._hass;
+      if (h && typeof h.localize === 'function') {
+        try {
+          var v = h.localize('ha_lyrics_card.' + key);
+          if (typeof v === 'string' && v) return v;
+        } catch (e) { }
+      }
+      return STRINGS[key] || key;
     }
 
     _features(track) {
@@ -1224,7 +1319,7 @@
 
     _stateText() {
       var s = this._st(this._track());
-      return s && s.state === 'paused' ? 'Paused' : 'Playing';
+      return s && s.state === 'paused' ? this._t('paused') : this._t('playing');
     }
 
     _controls() {
@@ -1263,20 +1358,20 @@
       this._ctlSig = sig;
       var html = '';
       if (c.show_mute && (f & F_VOLUME_MUTE)) {
-        html += '<button class="cb" data-c="mute" title="Mute">' + ico(muted ? 'volOff' : 'volHigh') + '</button>';
+        html += '<button class="cb" data-c="mute" title="Mute" aria-label="Mute">' + ico(muted ? 'volOff' : 'volHigh') + '</button>';
       }
-      html += '<button class="cb" data-c="prev" title="Previous"' + ((f & F_PREV) ? '' : ' disabled') + '>' + ico('prev') + '</button>';
-      html += '<button class="cb' + (playing ? ' playing' : '') + '" data-c="toggle" title="Play/Pause">' + ico(playing ? 'pause' : 'play') + '</button>';
-      html += '<button class="cb" data-c="next" title="Next"' + ((f & F_NEXT) ? '' : ' disabled') + '>' + ico('next') + '</button>';
+      if (f & F_PREV) html += '<button class="cb" data-c="prev" title="Previous" aria-label="Previous track">' + ico('prev') + '</button>';
+      html += '<button class="cb' + (playing ? ' playing' : '') + '" data-c="toggle" title="Play/Pause" aria-label="' + (playing ? 'Pause' : 'Play') + '">' + ico(playing ? 'pause' : 'play') + '</button>';
+      if (f & F_NEXT) html += '<button class="cb" data-c="next" title="Next" aria-label="Next track">' + ico('next') + '</button>';
       if (volMode === 'slider') {
-        html += '<div class="vol"><input type="range" min="0" max="100" step="1" value="' + Math.max(0, vol) + '"><span class="vlab">' + Math.max(0, vol) + '%</span></div>';
+        html += '<div class="vol"><input type="range" min="0" max="100" step="1" value="' + Math.max(0, vol) + '" aria-label="Volume"><span class="vlab">' + Math.max(0, vol) + '%</span></div>';
       } else if (volMode === 'step') {
-        html += '<div class="vol"><button class="vstep" data-c="v-" title="Volume down">' + ico('volDown') + '</button><button class="vstep" data-c="v+" title="Volume up">' + ico('volUp') + '</button></div>';
+        html += '<div class="vol"><button class="vstep" data-c="v-" title="Volume down" aria-label="Volume down">' + ico('volDown') + '</button><button class="vstep" data-c="v+" title="Volume up" aria-label="Volume up">' + ico('volUp') + '</button></div>';
       } else {
         html += '<div class="vol" hidden></div>';
       }
       if (c.show_power && ((f & F_TURN_ON) || (f & F_TURN_OFF))) {
-        html += '<button class="cb" data-c="power" title="Power">' + ico('power') + '</button>';
+        html += '<button class="cb" data-c="power" title="Power" aria-label="Power">' + ico('power') + '</button>';
       }
       e.controls.innerHTML = html;
       e.controls.style.setProperty('--ctrl', c.media_controls_size + 'px');
@@ -1290,6 +1385,7 @@
       if (toggle) {
         toggle.classList.toggle('playing', playing);
         toggle.innerHTML = ico(playing ? 'pause' : 'play');
+        toggle.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       }
       if (volMode === 'slider' && vol >= 0) {
         var inp = e.controls.querySelector('.vol input');
@@ -1298,6 +1394,7 @@
         try { focused = document.activeElement === inp; } catch (err) { }
         if (!focused && inp) inp.value = String(vol);
         if (lab) lab.textContent = vol + '%';
+        if (inp && vol >= 0) inp.setAttribute('aria-valuetext', vol + '%');
       }
       var mute = e.controls.querySelector('[data-c="mute"]');
       if (mute) mute.innerHTML = ico(muted ? 'volOff' : 'volHigh');
@@ -1329,13 +1426,19 @@
       if (e.tpos.textContent !== cur) e.tpos.textContent = cur;
       var tot = dur > 0 ? fmt(dur) : '';
       if (e.tdur.textContent !== tot) e.tdur.textContent = tot;
+      if (e.track && dur > 0) {
+        e.track.setAttribute('aria-valuenow', String(Math.round(Math.max(0, Math.min(1, pos / dur)) * 100)));
+        e.track.setAttribute('aria-valuetext', cur + ' of ' + tot);
+      }
     }
 
     _load(track, force) {
       if (!track) {
         this.data = null;
         this.msg = '';
+        this._loading = false;
         this._renderLines();
+        this._paintRetry();
         return;
       }
       var self = this;
@@ -1343,9 +1446,11 @@
       var cfg = this.config || {};
       if (cfg.show_lyrics === false || track.named === false) {
         this.data = null;
-        this.msg = cfg.show_lyrics === false ? 'Lyrics hidden' : this._stateText();
+        this.msg = cfg.show_lyrics === false ? this._t('lyrics_hidden') : this._stateText();
         this.offset = 0;
+        this._loading = false;
         this._renderLines();
+        this._paintRetry();
         return;
       }
       var useMa = cfg.lyrics_source === 'music_assistant';
@@ -1353,15 +1458,19 @@
       var rec = force ? undefined : cacheGet(lkey);
       if (rec) {
         this.data = rec.d;
-        this.msg = rec.d ? '' : 'No lyrics found';
+        this.msg = rec.d ? '' : this._t('not_found');
         this.offset = offsetGet(key) || (cfg && cfg.sync_offset) || 0;
+        this._loading = false;
         this._renderLines();
+        this._paintRetry();
         return;
       }
       this.data = null;
-      this.msg = 'Fetching lyrics\u2026';
+      this.msg = this._t('fetching');
       this.offset = 0;
+      this._loading = true;
       this._renderLines();
+      this._paintRetry();
       this._anchor();
       this._update(true);
       var request = useMa
@@ -1371,8 +1480,9 @@
         cacheSet(lkey, data);
         if (self.loadedKey !== key || !self._hass) return;
         self.data = data;
-        self.msg = data ? '' : 'No lyrics found';
+        self.msg = data ? '' : self._t('not_found');
         self.offset = offsetGet(key);
+        self._loading = false;
         self._renderLines();
         self._render();
       });
@@ -1381,6 +1491,7 @@
     _renderLines() {
       var box = this.el.lines;
       box.textContent = '';
+      box.classList.remove('empty');
       this.lineEls = [];
       this.active = -1;
       this._scrollTarget = null;
@@ -1389,11 +1500,12 @@
       this._marqueeReset();
       this._marqueeStop();
       if (!d || !d.lines || !d.lines.length) {
-        var text = d && d.kind === 'instrumental' ? '\u266a  Instrumental' : (this.msg || 'Nothing playing');
+        var text = d && d.kind === 'instrumental' ? '\u266a  ' + this._t('instrumental') : (this.msg || this._t('nothing_playing'));
         var m = document.createElement('div');
-        m.className = 'l msg';
+        m.className = 'l msg' + (this._loading ? ' loading' : '');
         m.textContent = text;
         box.appendChild(m);
+        box.classList.add('empty');
         this.lineEls = [m];
         return;
       }
@@ -1418,6 +1530,7 @@
       var c = this.config;
       if (c.layout === 'compact' || c.layout === 'minimal') return { from: active, to: Math.min(lines.length, active + 1) };
       if (c.layout === 'two_line') return { from: active, to: Math.min(lines.length, active + 2) };
+      if (c.layout === 'karaoke') return { from: Math.max(0, active - 1), to: Math.min(lines.length, active + 2) };
       var from = c.show_previous === false ? Math.max(0, active) : 0;
       var to = c.show_upcoming === false ? Math.min(lines.length, active + 1) : lines.length;
       return { from: from, to: to };
@@ -1428,15 +1541,19 @@
       var win = this._window(lines, this.active);
       var box = this.el.lines;
       box.textContent = '';
+      box.classList.remove('empty');
       this.lineEls = [];
+      this.activeEl = null;
+      var previewNext = this.config.layout === 'two_line' || this.config.layout === 'karaoke';
       for (var i = win.from; i < win.to; i++) {
-        var cls = 'l' + (i === this.active ? ' on' : '') +
-          (this.config.layout === 'two_line' && i === this.active + 1 ? ' next' : '');
+        var on = i === this.active;
+        var cls = 'l' + (on ? ' on' : '') + (previewNext && i === this.active + 1 ? ' next' : '');
         var el = document.createElement('div');
         el.className = cls;
         el.textContent = lines[i].text;
         box.appendChild(el);
         this.lineEls.push(el);
+        if (on) this.activeEl = el;
       }
     }
 
@@ -1524,27 +1641,39 @@
       this.active = idx;
       if (this._isFixed() || c.show_previous === false || c.show_upcoming === false) {
         this._renderWindow();
-        if (this.lineEls[0]) this._fitActiveLine(this.lineEls[0]);
+        if (this.activeEl) this._fitActiveLine(this.activeEl);
         return;
       }
       for (var i = 0; i < els.length; i++) {
         els[i].className = 'l' + (i === idx ? ' on' : '');
         els[i].style.fontSize = '';
       }
-      if (els[idx]) this._fitActiveLine(els[idx]);
-      this._scrollTo(els[idx]);
+      this.activeEl = els[idx] || null;
+      if (this.activeEl) this._fitActiveLine(this.activeEl);
+      this._scrollTo(this.activeEl);
     }
 
     _fitActiveLine(el) {
+      if (!el || !el.style) return;
       var c = this.config;
       var base = c.font_size;
       var target = Math.round(base * c.active_scale);
       el.style.fontSize = target + 'px';
+      // The card can be measured while hidden (display:none hands out a width of
+      // 0). Shrinking against that would floor every line to 12px, so only fit
+      // when we actually have a width; _onResize re-fits once it is visible.
       var maxW = el.parentElement ? el.parentElement.clientWidth : el.clientWidth;
+      if (!(maxW > 0)) return;
       while (el.scrollWidth > maxW + 1 && target > 12) {
         target -= 1;
         el.style.fontSize = target + 'px';
       }
+    }
+
+    _onResize() {
+      if (!this.data || this.data.kind !== 'synced' || !this._lyricsOn()) return;
+      if (!this.lineEls || !this.lineEls.length) return;
+      this._active(this.active < 0 ? 0 : this.active);
     }
 
     _scrollTo(el) {
@@ -1597,6 +1726,9 @@
     }
 
     _marqueeStart() {
+      // _marqueeSync runs on every tick; without this guard each call would arm
+      // another self-perpetuating rAF loop.
+      if (this._raf) return;
       var self = this;
       this._raf = requestAnimationFrame(function () { self._marqueeStep(); });
     }
@@ -1707,6 +1839,52 @@
       } catch (e) { }
     }
 
+    // The "No lyrics found" state was cached for a day, so a transient miss (the
+    // database was down, the metadata was wrong) had no way out. The retry
+    // button drops the negative entry and looks again.
+    _paintRetry() {
+      var e = this.el;
+      if (!e || !e.retry) return;
+      var track = this._track();
+      var show = !this._loading && !this.data && !!track && track.named !== false &&
+        (!this.config || this.config.show_lyrics !== false);
+      e.retry.hidden = !show;
+      if (show) this._setText(e.retry, this._t('retry'));
+    }
+
+    _retryLyrics() {
+      var t = this._track();
+      if (!t) return;
+      var key = t.k;
+      var lkey = (this.config && this.config.lyrics_source === 'music_assistant') ? key + '|ma' : key;
+      try { localStorage.removeItem(LS + lkey); } catch (e) { }
+      this._load(t, true);
+    }
+
+    _onKey(ev) {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('.track')) {
+        if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+          if (ev.preventDefault) ev.preventDefault();
+          var dur = this._dur();
+          if (!dur) return;
+          var step = ev.key === 'ArrowRight' ? 5 : -5;
+          var target = Math.max(0, Math.min(dur, this._position() + step));
+          this.anchor = null;
+          if (this._features(this._track()) & F_SEEK) this._callSvc('media_seek', { seek_position: Math.round(target * 10) / 10 });
+          this._update(true);
+        }
+        return;
+      }
+      var dot = t.closest('.dot');
+      if (dot) {
+        if (ev.key === 'Enter' || ev.key === ' ') { if (ev.preventDefault) ev.preventDefault(); this._go(Number(dot.dataset.i)); }
+        else if (ev.key === 'ArrowRight') { if (ev.preventDefault) ev.preventDefault(); this._go(this.idx + 1); }
+        else if (ev.key === 'ArrowLeft') { if (ev.preventDefault) ev.preventDefault(); this._go(this.idx - 1); }
+      }
+    }
+
     _onClick(ev) {
       var target = ev.target;
       if (!this._track()) return;
@@ -1721,12 +1899,21 @@
         case 'toggle': this._callSvc('media_play_pause'); break;
         case 'prev': this._callSvc('media_previous_track'); break;
         case 'next': this._callSvc('media_next_track'); break;
-        case 'power': this._callSvc('toggle'); break;
+        case 'power': {
+          // Explicit on/off beats media_player.toggle, which some integrations
+          // treat as play/pause. Collected players are always on, so this is
+          // normally turn_off; the turn_on path covers stale/edge states.
+          var state = st && st.state;
+          var on = !!state && ['off', 'unavailable', 'unknown', 'standby'].indexOf(state) < 0;
+          this._callSvc(on ? 'turn_off' : 'turn_on');
+          break;
+        }
         case 'mute':
           this._callSvc('volume_mute', { is_volume_muted: !(st && st.attributes && st.attributes.is_volume_muted) });
           break;
         case 'v-': this._callSvc('volume_down'); break;
         case 'v+': this._callSvc('volume_up'); break;
+        case 'retry': this._retryLyrics(); break;
         case 'syncreset': this._setOffset(0); break;
         case 'sync-':
           this._pokeSync();
@@ -1771,6 +1958,7 @@
       if (ev.target.closest('[data-c]')) return;
       var dur = this._dur();
       this._scrub = dur * this._seekFrac(ev);
+      if (this.el.track) this.el.track.classList.add('scrub');
       this._paintSeek(true);
     }
 
@@ -1782,6 +1970,7 @@
     }
 
     _onSeekUp(ev) {
+      if (this.el.track) this.el.track.classList.remove('scrub');
       if (ev && ev.type === 'pointercancel') {
         this._scrub = null;
         return;
@@ -1878,6 +2067,9 @@
           { name: 'layout', selector: { select: { mode: 'dropdown', options: [{ label: 'Focus - scrolling lyrics', value: 'focus' }, { label: 'Karaoke - spacious lyrics', value: 'karaoke' }, { label: 'Compact - active line only', value: 'compact' }, { label: 'Two line - active and next', value: 'two_line' }, { label: 'Minimal - active line only', value: 'minimal' }] } } },
           { name: 'card_height', selector: { text: { } } },
           { name: 'height', selector: { number: { min: 60, max: 1600, mode: 'box', unit_of_measurement: 'px' } } },
+          { name: 'max_lines', selector: { number: { min: 1, max: 40, step: 1, mode: 'box' } } },
+          { name: 'line_height', selector: { number: { min: 12, max: 140, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+          { name: 'show_header', selector: { boolean: { } } },
           { name: 'show_track_info', selector: { boolean: { } } },
           { name: 'show_friendly_name', selector: { boolean: { } } },
           { name: 'show_intro', selector: { boolean: { } } },
@@ -1905,9 +2097,14 @@
           { name: 'show_previous', selector: { boolean: { } } },
           { name: 'show_upcoming', selector: { boolean: { } } },
           { name: 'plain_lyrics_auto_scroll', selector: { boolean: { } } },
-          { name: 'static_font_size', selector: { number: { min: 10, max: 48, step: 1, mode: 'box', unit_of_measurement: 'px' } } }
+          { name: 'static_scroll', selector: { boolean: { } } },
+          { name: 'static_scroll_speed', selector: { number: { min: 4, max: 60, step: 1, mode: 'box', unit_of_measurement: 'px/s' } } },
+          { name: 'static_font_size', selector: { number: { min: 10, max: 48, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+          { name: 'text_color', selector: { text: { } } },
+          { name: 'highlight_color', selector: { text: { } } }
         ]],
         ['Track header', [
+          { name: 'track_info_font_size', selector: { number: { min: 8, max: 40, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
           { name: 'header_font_size', selector: { number: { min: 8, max: 48, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
           { name: 'header_alignment', selector: { select: { mode: 'dropdown', options: [{ label: 'Same as lyrics', value: 'inherit' }, { label: 'Left', value: 'left' }, { label: 'Centre', value: 'center' }, { label: 'Right', value: 'right' }] } } },
           { name: 'header_layout', selector: { select: { mode: 'dropdown', options: [{ label: 'Title and artist together', value: 'combined' }, { label: 'Title left, artist right', value: 'split' }, { label: 'Artist left, title right', value: 'split_reverse' }] } } }
@@ -1955,7 +2152,8 @@
     _label(name) {
       return ({
         entity: 'Media player', entities: 'Media players', layout: 'Layout', card_height: 'Card height (e.g. 260px, 65vh)',
-        height: 'Card height (px)', show_track_info: 'Show track title and artist', show_friendly_name: 'Show player name',
+        height: 'Card height (px)', max_lines: 'Visible lyric lines', line_height: 'Line box height (raise if lines wrap)',
+        show_header: 'Show the track header', show_track_info: 'Show track title and artist', show_friendly_name: 'Show player name',
         show_lyrics: 'Show lyrics (album art when off)',
         show_intro: 'Show track intro before first lyric', intro_duration: 'Minimum intro duration', intro_font_size: 'Intro title size',
         show_media_controls: 'Show player controls', media_controls_size: 'Control button size',
@@ -1964,7 +2162,10 @@
         alignment: 'Lyrics alignment', font_family: 'Lyrics font', font_size: 'Lyrics font size', font_weight: 'Lyrics font weight',
         inactive_opacity: 'Inactive lyric opacity', active_scale: 'Active lyric scale',
         show_previous: 'Show previous lyric lines', show_upcoming: 'Show upcoming lyric lines',
-        plain_lyrics_auto_scroll: 'Auto-scroll plain lyrics with playback', static_font_size: 'Plain lyrics font size',
+        plain_lyrics_auto_scroll: 'Auto-scroll plain lyrics with playback',
+        static_scroll: 'Drift unsynced lyrics when playback speed is unknown', static_scroll_speed: 'Drift speed',
+        static_font_size: 'Plain lyrics font size', text_color: 'Lyric colour (#rgb or #rrggbb)', highlight_color: 'Active lyric colour (#rgb or #rrggbb)',
+        track_info_font_size: 'Title/artist size',
         header_font_size: 'Header font size', header_alignment: 'Header alignment', header_layout: 'Header layout',
         background_mode: 'Background source', background_opacity: 'Card background opacity', art_size: 'Album art size',
         show_album_art: 'Show album art', artwork_blur: 'Artwork blur', artwork_opacity: 'Artwork opacity',
@@ -2021,10 +2222,13 @@
     customElements.define('ha-lyrics-card-editor', HaLyricsCardEditor);
   }
   window.customCards = window.customCards || [];
-  window.customCards.push({
-    type: 'ha-lyrics-card',
-    name: 'Now Playing & Lyrics',
-    description: 'Player controls and synced lyrics for any media player.',
-    preview: false
-  });
+  var alreadyListed = window.customCards.some(function (c) { return c && c.type === 'ha-lyrics-card'; });
+  if (!alreadyListed) {
+    window.customCards.push({
+      type: 'ha-lyrics-card',
+      name: 'Now Playing & Lyrics',
+      description: 'Player controls and synced lyrics for any media player.',
+      preview: false
+    });
+  }
 })();
