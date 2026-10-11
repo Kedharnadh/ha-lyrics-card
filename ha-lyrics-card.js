@@ -19,6 +19,14 @@
   var F_PREV = 64, F_NEXT = 128, F_TURN_ON = 256, F_TURN_OFF = 512, F_VOLUME_STEP = 2048;
   var LAYOUTS = ['focus', 'karaoke', 'compact', 'two_line', 'minimal'];
   var ALIGNS = { left: 'left', center: 'center', right: 'right' };
+  var ART_COLOR = {};
+  var ART_COLOR_MAX = 200;
+
+  // Album art URLs from HA usually carry a rotating ?token=..., so compare the
+  // stable path to tell a genuinely new image apart from a refreshed one.
+  function artKey(url) {
+    return String(url == null ? '' : url).split(/[?#]/)[0];
+  }
 
   function squash(v) {
     return String(v == null ? '' : v)
@@ -1163,7 +1171,14 @@
           e.artImg.src = url;
           e.hero.src = url;
           e.bg.style.backgroundImage = 'url("' + String(url).replace(/["\\()]/g, encodeURIComponent) + '")';
-          if (this.config.text_color_mode === 'auto') this._analyseArtwork(url);
+          if (this.config.text_color_mode === 'auto') {
+            var key = artKey(url);
+            if (key !== this._artKey) {
+              this._artKey = key;
+              if (ART_COLOR[key]) this._artText = ART_COLOR[key];
+              else this._analyseArtwork(url);
+            }
+          }
         } else {
           e.artImg.onerror = null;
           e.hero.onerror = null;
@@ -1171,6 +1186,7 @@
           e.hero.removeAttribute('src');
           e.bg.style.backgroundImage = '';
           this._artText = '';
+          this._artKey = '';
         }
       }
       var on = !!url;
@@ -1184,23 +1200,34 @@
 
     _analyseArtwork(url) {
       var self = this;
-      this._artText = '';
+      var key = artKey(url);
       var img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
+        if (self._artKey !== key) return;
+        var color = '';
         try {
           var cnv = document.createElement('canvas');
           cnv.width = 1; cnv.height = 1;
           var ctx = cnv.getContext ? cnv.getContext('2d', { willReadFrequently: true }) : null;
-          if (!ctx) return;
-          ctx.drawImage(img, 0, 0, 1, 1);
-          var d = ctx.getImageData(0, 0, 1, 1).data;
-          var lum = (0.2126 * d[0] + 0.7152 * d[1] + 0.0722 * d[2]) / 255;
-          self._artText = lum > 0.55 ? '#111111' : '#ffffff';
-        } catch (e) { }
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, 1, 1);
+            var d = ctx.getImageData(0, 0, 1, 1).data;
+            var lum = (0.2126 * d[0] + 0.7152 * d[1] + 0.0722 * d[2]) / 255;
+            color = lum > 0.55 ? '#111111' : '#ffffff';
+            var keys = Object.keys(ART_COLOR);
+            if (keys.length >= ART_COLOR_MAX && !ART_COLOR[key]) delete ART_COLOR[keys[0]];
+            ART_COLOR[key] = color;
+          }
+        } catch (e) {
+          color = '';
+        }
+        self._artText = color;
         self._applyTextColor();
       };
       img.onerror = function () {
+        if (self._artKey !== key) return;
+        delete ART_COLOR[key];
         self._artText = '';
         self._applyTextColor();
       };

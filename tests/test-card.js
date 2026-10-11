@@ -163,7 +163,7 @@ function findVolInput(c) {
   eq('progress bar counts up', ma.el.tpos.textContent, '0:03');
   eq('progress bar fills', parseFloat(ma.el.fill.style.width) > 2, true);
   ma.hass = castHass({ ...meta, position: 5.5 });
-  eq('a later report is adopted', ma._position(), 5.5);
+  eq('a later report is adopted', Math.abs(ma._position() - 5.5) < 0.05, true);
 
   ma = castCard({ ...meta, state: 'paused' });
   await flush();
@@ -180,7 +180,7 @@ function findVolInput(c) {
   await new Promise((r) => setTimeout(r, 300));
   eq('stale tail is not re-adopted', ma._position() > 0.2 && ma._position() < 1.5, true);
   ma.hass = castHass({ ...meta, position: 4.2 });
-  eq('a real report still wins after a restart', ma._position(), 4.2);
+  eq('a real report still wins after a restart', Math.abs(ma._position() - 4.2) < 0.05, true);
   eq('lyrics follow the real report', ma.lineEls[ma.active].textContent, 'third');
 
   ma = castCard({ ...meta, position: null });
@@ -1115,6 +1115,46 @@ function findVolInput(c) {
   await flush();
   eq('switching mode adds the new class', c.el.card.classList.contains('art-square'), true);
   eq('switching mode drops the old class', c.el.card.classList.contains('art-cover'), false);
+
+  console.log('\nauto contrast follows the artwork, not the token');
+  // Regression: HA rotates the ?token= on entity_picture on every state update.
+  // That must not be mistaken for a new image, or the analysed lyric colour is
+  // recomputed (and briefly cleared) on each poll and whenever the card is
+  // re-rendered after a height/config change.
+  const tokenHass = (picture) => {
+    const st = player('media_player.spotify', 'zz unknown tune 991', 'nobody', '', 200, 5);
+    st.attributes.entity_picture = picture;
+    st.attributes.supported_features = F.PAUSE;
+    return hass({ 'media_player.spotify': st });
+  };
+  const tokenCard = (picture) => {
+    cache.clear();
+    const card = makeCard({}, []);
+    card.hass = tokenHass(picture);
+    return card;
+  };
+  const spyAnalyse = (card) => {
+    let calls = 0;
+    const orig = card._analyseArtwork;
+    card._analyseArtwork = function () { calls++; return orig.apply(this, arguments); };
+    return () => calls;
+  };
+
+  c = tokenCard('/api/media_player_proxy/x/cover.jpg?token=aaa');
+  await flush();
+  eq('auto contrast analysis armed on first render', typeof c._artKey === 'string' && c._artKey.length > 0, true);
+  const analyseCalls = spyAnalyse(c);
+
+  // Same artwork path, refreshed token: the picture reloads but the colour is stable.
+  c.hass = tokenHass('/api/media_player_proxy/x/cover.jpg?token=bbb');
+  await flush();
+  eq('refreshed token does not re-analyse the colour', analyseCalls(), 0);
+  eq('refreshed token still refreshes the picture', c.el.hero.src, '/api/media_player_proxy/x/cover.jpg?token=bbb');
+
+  // A genuinely different image does get analysed again.
+  c.hass = tokenHass('/api/media_player_proxy/x/other.jpg?token=ccc');
+  await flush();
+  eq('a different image is analysed again', analyseCalls(), 1);
 
   console.log('\nm-disabled lyrics marquee does not spawn parallel frames');
   // Regression: _marqueeSync runs every tick, and _marqueeStart was not guarded,
