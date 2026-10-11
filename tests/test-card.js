@@ -1008,10 +1008,10 @@ function findVolInput(c) {
   eq('no lyrics -> has-bg dropped', c.el.card.classList.contains('has-bg'), false);
   eq('no lyrics -> header thumb still shown', c.el.art.hidden, false);
   eq('no lyrics -> controls still shown', c.el.controls.hidden, false);
-  // The takeover should be large: the stage is not pinned to the lyric box, so
-  // the .artmode CSS can size it to the card width (a square) instead.
-  eq('no lyrics -> stage left free to fill', c.el.stage.style.height, '');
-  eq('no lyrics -> stage sizing delegated to css', c._stagePx(), 0);
+  // The default takeover (cover) keeps the normal card height, so the card does
+  // not grow taller than it is with lyrics.
+  eq('no lyrics -> default art mode is cover', c.config.art_mode, 'cover');
+  eq('no lyrics -> stage keeps the lyric box by default', c.el.stage.style.height, (c.config.max_lines * c.config.line_height) + 'px');
   eq('no lyrics -> auto contrast not taken from the art',
     c.el.card.style.getPropertyValue('--ha-lyrics-primary'), '');
 
@@ -1074,11 +1074,28 @@ function findVolInput(c) {
   eq('fixed height + lyrics -> backdrop stays', c.el.bg.hidden, false);
 
   console.log('\nart sizing preference (art_mode)');
+  const boxPx = (card) => card.config.max_lines * card.config.line_height;
+
   c = artCard({}, [], 'zz unknown tune 991');
   await flush();
-  eq('default art_mode is screen', c.config.art_mode, 'screen');
+  eq('default art_mode is cover', c.config.art_mode, 'cover');
+  eq('cover mode class on the card', c.el.card.classList.contains('art-cover'), true);
+  eq('cover -> stage kept at the lyric box', c._stagePx(), boxPx(c));
+  eq('cover -> stage height set inline', c.el.stage.style.height, boxPx(c) + 'px');
+  eq('cover -> still takes over', c.el.card.classList.contains('artmode'), true);
+
+  c = artCard({ art_mode: 'compact' }, [], 'zz unknown tune 991');
+  await flush();
+  eq('compact mode class on the card', c.el.card.classList.contains('art-compact'), true);
+  eq('compact -> stage pinned to the lyric box', c._stagePx(), boxPx(c));
+  eq('compact -> stage height set inline', c.el.stage.style.height, boxPx(c) + 'px');
+  eq('compact -> art still takes over', c.el.card.classList.contains('artmode'), true);
+
+  c = artCard({ art_mode: 'screen' }, [], 'zz unknown tune 991');
+  await flush();
   eq('screen mode class on the card', c.el.card.classList.contains('art-screen'), true);
   eq('screen -> stage sizing delegated to css', c._stagePx(), 0);
+  eq('screen -> stage height left free', c.el.stage.style.height, '');
 
   c = artCard({ art_mode: 'square' }, [], 'zz unknown tune 991');
   await flush();
@@ -1086,25 +1103,18 @@ function findVolInput(c) {
   eq('square -> no cap, css only', c._stagePx(), 0);
   eq('square -> still takes over', c.el.card.classList.contains('artmode'), true);
 
-  c = artCard({ art_mode: 'cover' }, [], 'zz unknown tune 991');
-  await flush();
-  eq('cover mode class on the card', c.el.card.classList.contains('art-cover'), true);
-  eq('cover -> stage sizing delegated to css', c._stagePx(), 0);
-
-  c = artCard({ art_mode: 'compact' }, [], 'zz unknown tune 991');
-  await flush();
-  const compactPx = c.config.max_lines * c.config.line_height;
-  eq('compact mode class on the card', c.el.card.classList.contains('art-compact'), true);
-  eq('compact -> stage pinned to the lyric box', c._stagePx(), compactPx);
-  eq('compact -> stage height set inline', c.el.stage.style.height, compactPx + 'px');
-  eq('compact -> art still takes over', c.el.card.classList.contains('artmode'), true);
-
   c = artCard({ art_mode: 'bogus' }, [], 'zz unknown tune 991');
   await flush();
-  eq('unknown art_mode falls back to screen', c.config.art_mode, 'screen');
-  eq('unknown art_mode gets the screen class', c.el.card.classList.contains('art-screen'), true);
+  eq('unknown art_mode falls back to cover', c.config.art_mode, 'cover');
+  eq('unknown art_mode gets the cover class', c.el.card.classList.contains('art-cover'), true);
   eq('unknown art_mode is not left on the card as a stray class',
     c.el.card.classList.contains('art-bogus'), false);
+
+  // Switching modes updates the class without leaving the old one behind.
+  c.setConfig(Object.assign({}, c.config, { art_mode: 'square' }));
+  await flush();
+  eq('switching mode adds the new class', c.el.card.classList.contains('art-square'), true);
+  eq('switching mode drops the old class', c.el.card.classList.contains('art-cover'), false);
 
   console.log('\nm-disabled lyrics marquee does not spawn parallel frames');
   // Regression: _marqueeSync runs every tick, and _marqueeStart was not guarded,

@@ -131,7 +131,7 @@ from the card picker by searching for **Now Playing & Lyrics Card**.
 | `background_opacity` | `1` | Card backdrop opacity (0–1) |
 | `show_album_art` | `true` | Show album art in the header. Also drives the full-size art shown when lyrics are off or unavailable |
 | `art_size` | `42` | Album art size in px (0–200) |
-| `art_mode` | `screen` | Size of the full art shown when there are no lyrics: `screen` (square capped to the viewport), `square` (square sized to the card width, no cap), `compact` (fills the lyric box height), `cover` (fills the capped box, cropping) |
+| `art_mode` | `cover` | Size of the full art shown when there are no lyrics: `cover` (fills the normal lyric box, cropping, so the card keeps its height), `compact` (fits inside that box without cropping), `screen` (square capped to the viewport), `square` (square sized to the card width, no cap) |
 | `artwork_blur` | `14` | Backdrop blur in px (0–80) |
 | `artwork_opacity` | `1` | How strongly the art shows through (0–1) |
 | `artwork_overlay_opacity` | `0.4` | Dark wash over the art (0–1) |
