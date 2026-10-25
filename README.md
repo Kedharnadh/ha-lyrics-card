@@ -365,15 +365,20 @@ Copy `ha-lyrics-card.js` into `config/www/`, add
   driving a Google Cast group, for instance — still scroll their lyrics and fill
   their progress bar, and a position left over from the previous track restarts
   the clock instead of parking it at `0:00`.
-- The reported position is timestamped. When the player publishes
-  `media_position_updated_at`, the card carries `media_position` forward to now
-  instead of treating it as current, so opening a dashboard mid-song (or coming
-  back to a tab that was hidden) starts on the line that is playing, not on the
-  last line the player happened to report.
+- The reported position is timestamped. When the card first sees a song that is
+  already underway, it carries `media_position` forward from
+  `media_position_updated_at`, so opening a dashboard mid-song starts on the
+  line that is playing, not on the last line the player happened to report.
+  A song that starts while the card is open is synced from its own first
+  report instead: the previous song's timestamp is not carried across, and
+  between reports the card's own clock runs. A report can pull the clock back
+  into sync but never add its age on top, so a stale timestamp cannot make the
+  lyrics drift ahead.
 - Crossfade and cast groups can leave the outgoing song's progress on the entity
   for a moment after the next title appears. A new song on the same player
-  therefore starts at `0:00` and ignores position reports from before the switch
-  until the player publishes the new song's own position.
+  therefore starts at `0:00`, and a position that is further along than the time
+  elapsed since the switch is treated as that outgoing tail until the player
+  publishes the new song's own position.
 - Seeking from the card moves the highlight and progress bar to the target at
   once and ignores the reports that still describe the pre-seek position while
   `media_seek` is in flight. A seek made in the player's own app is adopted as

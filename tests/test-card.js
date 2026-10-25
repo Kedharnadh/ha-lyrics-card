@@ -265,6 +265,40 @@ function findVolInput(c) {
   eq('a genuine late-discovered position is kept', Math.abs(c._position() - 22) < 0.1, true);
   eq('late discovery lands on the right line', c.lineEls[c.active].textContent, 'All ends with beginnings');
 
+  // Crossfade with a timestamp that still belongs to the outgoing song: the new
+  // title is up while media_position_updated_at is the last report of the old
+  // track. Ageing that report is what pushed the new lyrics ahead.
+  const xfade = (position, ageMs) => {
+    const st = player('media_player.spotify', 'Get Lucky', 'Daft Punk', 'Random Access Memories', 248, position);
+    st.attributes.media_position_updated_at = new Date(Date.now() - ageMs).toISOString();
+    return st;
+  };
+  cache.clear();
+  c = makeCard({ show_intro: false }, [
+    [{ track_name: 'Creep' }, CREEP],
+    [{ track_name: 'Get Lucky' }, GETLUCKY]
+  ]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 220) });
+  await flush();
+  c.hass = hass({ 'media_player.spotify': xfade(0, 20000) });
+  await flush();
+  eq('a crossfaded 0:00 is not aged from the old timestamp', c._position() < 1, true);
+  c.hass = hass({ 'media_player.spotify': xfade(5, 20000) });
+  eq('a crossfaded report is not pushed ahead', c._position() < 6, true);
+  eq('crossfaded lyrics stay on the right line', c.lineEls[c.active].textContent, 'Like the legend of the phoenix');
+
+  // A player that advances media_position but leaves the timestamp behind must
+  // not gain a few seconds on every report until the lyrics run ahead.
+  cache.clear();
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': forgotTs(20) });
+  await flush();
+  for (let i = 1; i <= 4; i++) {
+    const before = c._position();
+    c.hass = hass({ 'media_player.spotify': forgotTs(Math.round(before)) });
+    eq('stale timestamp report ' + i + ' does not creep ahead', c._position() - before < 2, true);
+  }
+
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
     [{ track_name: 'Creep' }, CREEP],

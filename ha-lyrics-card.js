@@ -1150,7 +1150,6 @@
     // open deep into the new song.
     _trackStart(track, last) {
       this._ignorePos = false;
-      this._staleFrom = null;
       this._changedAt = 0;
       if (!track) return;
       // Re-loading the same track (toggling show_lyrics, a retry) must not
@@ -1168,18 +1167,23 @@
       var stale = false;
       if (same) {
         this._changedAt = Date.now();
-        this._staleFrom = last.pos;
         stale = !!rep && rep.pos > 5 && (
           rep.at
-            ? (rep.at < this._changedAt - 5000 || Math.abs(rep.pos - this._staleFrom) <= 5)
-            : Math.abs(rep.pos - this._staleFrom) <= 5
+            ? (rep.at < this._changedAt - 5000 || Math.abs(rep.pos - last.pos) <= 5)
+            : Math.abs(rep.pos - last.pos) <= 5
         );
       }
       // Neither the previous track's clock nor another player's may carry into
       // this one. A trusted report restarts it there; anything else starts at
-      // zero and lets the player's next report take over.
+      // zero and lets the player's next report take over. Ageing the report is
+      // only right when the card discovers a song that is already underway: at a
+      // track change the timestamp still belongs to the outgoing song, so
+      // carrying it forward is what made a crossfaded song start ahead.
+      var first = !last;
+      var pos = 0;
+      if (!stale && rep) pos = first && rep.pos > 5 ? this._estimate(rep, playing) : rep.pos;
       this.anchor = {
-        pos: stale || !rep ? 0 : this._estimate(rep, playing),
+        pos: pos,
         raw: rep ? rep.pos : null,
         rawAt: rep ? rep.at : 0,
         at: Date.now(),
@@ -1670,8 +1674,10 @@
       if (!s) { this.anchor = null; return; }
       var playing = s.state === 'playing';
       var rep = readPos(s.attributes || {});
+      // Only _trackStart, on its first look at a song, carries a report
+      // forward. Re-anchoring later must not age a possibly stale report.
       this.anchor = {
-        pos: this._estimate(rep, playing),
+        pos: rep ? rep.pos : 0,
         raw: rep ? rep.pos : null,
         rawAt: rep ? rep.at : 0,
         at: Date.now(),
@@ -1679,19 +1685,19 @@
       };
     }
 
-    // media_position is only true as of media_position_updated_at. Carry it
-    // forward to now while playing; a paused player is already at the reported
-    // spot. When a previous estimate is available, the correction is bounded by
-    // the gap to it, so an integration that updates media_position but leaves a
-    // stale timestamp cannot double-count the clock. The age itself is capped
-    // so a broken clock cannot fling the lyrics either.
+    // media_position is true as of media_position_updated_at. It may be carried
+    // forward while playing, but only on the first look at a song, and while an
+    // ongoing report may correct the clock backwards it may never push it ahead:
+    // the age of a stale report would otherwise keep adding seconds. A paused
+    // player is already at the reported spot. The age is capped so a broken
+    // clock cannot fling the lyrics either.
     _estimate(rep, playing, ref) {
       if (!rep) return 0;
       if (!playing || !rep.at) return rep.pos;
       var age = (Date.now() - rep.at) / 1000;
       if (!(age > 0)) return rep.pos;
       age = Math.min(age, 900);
-      if (ref != null && ref > rep.pos) age = Math.min(age, ref - rep.pos + 3);
+      if (ref != null) age = Math.min(age, Math.max(0, ref - rep.pos));
       return rep.pos + age;
     }
 
@@ -1729,18 +1735,14 @@
         // not re-adopted, while one that publishes a new timestamp is.
         var same = an.raw != null && Math.abs(rep.pos - an.raw) <= 0.5 && rep.at === an.rawAt;
         if (this._ignorePos) {
-          // The outgoing track's tail, from before the switch, or a report that
-          // cannot be told apart from it on players without a timestamp. The
-          // new track's own first report sits near zero, well below the tail.
-          var since = this._changedAt ? now - this._changedAt : 1e9;
-          var tail = rep.at
-            ? (rep.pos > 30 && this._staleFrom != null && Math.abs(rep.pos - this._staleFrom) <= 5)
-            : (since < 20000 && this._staleFrom != null && rep.pos >= this._staleFrom - 3);
-          var stale = tail || (!!rep.at && rep.at < (this._changedAt || 0) - 5000);
-          if (stale) {
-            // Follow the tail if the player keeps advancing it, so a late
-            // crossfade does not slip past the comparison.
-            if (this._staleFrom == null || rep.pos > this._staleFrom) this._staleFrom = rep.pos;
+          // After a switch, a position that is further along than the time
+          // since the switch cannot belong to the song that just started: it is
+          // still the outgoing track's tail, however the player timestamps it.
+          // A big jump (the player finally publishing the new song, or a seek)
+          // is accepted, and the guard gives up after a minute.
+          var elapsed = this._changedAt ? (now - this._changedAt) / 1000 : 0;
+          var moved = an.raw == null ? Infinity : Math.abs(rep.pos - an.raw);
+          if (rep.pos > elapsed + 10 && moved <= 30 && elapsed < 60) {
             an.raw = rep.pos;
             an.rawAt = rep.at;
             same = true;
@@ -1752,9 +1754,8 @@
         // the old spot for a moment. Do not drag the highlight back to it.
         var g = this._seekGuard;
         if (g) {
-          var est = this._estimate(rep, playing);
           if (now - g.at > 3000) this._seekGuard = null;
-          else if (Math.abs(est - g.from) <= 5) {
+          else if (Math.abs(rep.pos - g.from) <= 5) {
             an.raw = rep.pos;
             an.rawAt = rep.at;
             same = true;
