@@ -189,6 +189,82 @@ function findVolInput(c) {
   await new Promise((r) => setTimeout(r, 250));
   eq('explicit null position does not freeze', ma._position() > 0.15, true);
 
+  console.log('\nopening the card mid-song (media_position_updated_at)');
+  // HA's media_position only means "this is where the track was at
+  // media_position_updated_at". Opening a dashboard after the report sat for a
+  // while used to start the highlight however many seconds behind that report
+  // was; the age is now carried forward.
+  const aged = (position, ageMs, state) => {
+    const st = player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, position, state);
+    st.attributes.media_position_updated_at = new Date(Date.now() - ageMs).toISOString();
+    return st;
+  };
+  cache.clear();
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': aged(90, 40000) });
+  await flush();
+  const late = c._position();
+  eq('a 40s-old report is carried forward', late > 128 && late < 140, true);
+  eq('lyrics open at the carried position', c.lineEls[c.active].textContent, 'Your skin makes me cry');
+
+  cache.clear();
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': aged(90, 40000, 'paused') });
+  await flush();
+  eq('a paused report is not carried forward', Math.abs(c._position() - 90) < 0.05, true);
+  eq('paused lyrics sit where the player is', c.lineEls[c.active].textContent, 'Your skin makes me cry');
+
+  // Some integrations advance media_position but leave the timestamp at the
+  // track's start. The age must not then be added a second time.
+  cache.clear();
+  const forgotTs = (position) => {
+    const st = player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, position);
+    st.attributes.media_position_updated_at = new Date(Date.now() - 60000).toISOString();
+    return st;
+  };
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': forgotTs(20) });
+  await flush();
+  const carried = c._position();
+  eq('a stale timestamp is still carried once', carried > 75 && carried < 90, true);
+  c.hass = hass({ 'media_player.spotify': forgotTs(Math.round(carried)) });
+  eq('a stale timestamp is not counted twice', Math.abs(c._position() - carried) < 6, true);
+
+  console.log('\nnew song after crossfade (outgoing position still on the entity)');
+  cache.clear();
+  c = makeCard({ show_intro: false }, [
+    [{ track_name: 'Creep' }, CREEP],
+    [{ track_name: 'Get Lucky' }, GETLUCKY]
+  ]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 220) });
+  await flush();
+  eq('first song loaded', c._tracks[c.idx].title, 'Creep');
+  // Crossfade: the title flips to the next song while the entity still carries
+  // the outgoing song's progress. The card used to open the new lyrics deep in.
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Get Lucky', 'Daft Punk', 'Random Access Memories', 248, 222) });
+  await flush();
+  eq('next song starts from zero', c._position() < 1, true);
+  eq('next song opens on its first line', c.lineEls[c.active].textContent, 'Like the legend of the phoenix');
+  // The player finally publishes the real position of the new song.
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Get Lucky', 'Daft Punk', 'Random Access Memories', 248, 22) });
+  eq('a real new-song report is adopted', Math.abs(c._position() - 22) < 0.05, true);
+  eq('lyrics follow the real report', c.lineEls[c.active].textContent, 'All ends with beginnings');
+
+  // The opposite case: the card was not watching when the song changed (hidden
+  // tab, dormant dashboard) and the new song is already underway. That position
+  // is genuine and must not be mistaken for the previous song's tail.
+  cache.clear();
+  c = makeCard({ show_intro: false }, [
+    [{ track_name: 'Creep' }, CREEP],
+    [{ track_name: 'Get Lucky' }, GETLUCKY]
+  ]);
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Creep', 'Radiohead', 'Pablo Honey', 239, 230) });
+  await flush();
+  c.hass = hass({ 'media_player.spotify': player('media_player.spotify', 'Get Lucky', 'Daft Punk', 'Random Access Memories', 248, 22) });
+  await flush();
+  eq('a genuine late-discovered position is kept', Math.abs(c._position() - 22) < 0.1, true);
+  eq('late discovery lands on the right line', c.lineEls[c.active].textContent, 'All ends with beginnings');
+
   console.log('\nmultiple tracks / swipe');
   c = makeCard({}, [
     [{ track_name: 'Creep' }, CREEP],
@@ -686,6 +762,27 @@ function findVolInput(c) {
   eq('seek payload', calls[calls.length - 1].data, {
     entity_id: 'media_player.spotify', seek_position: 95.6
   });
+
+  console.log('\nseeking in the card stays put until the player catches up');
+  // media_seek is a service call; the state stream still describes the old spot
+  // for a moment. The card now moves to the target at once and ignores those
+  // reports, instead of snapping back and then jumping forward.
+  cache.clear();
+  calls = [];
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': ctrlState() }, cs);
+  await flush();
+  c.el.track.getBoundingClientRect = () => ({ left: 0, width: 200 });
+  c._onSeekDown({ button: 0, clientX: 100, target: c.el.track });
+  c._onSeekUp({});
+  eq('seek service released', calls[calls.length - 1].svc, 'media_seek');
+  eq('highlight moves to the seek target at once', Math.abs(c._position() - 119.5) < 0.2, true);
+  eq('lyrics move to the seek target at once', c.lineEls[c.active].textContent, 'Your skin makes me cry');
+  c.hass = hass({ 'media_player.spotify': ctrlState() }, cs);
+  await flush();
+  eq('a stale pre-seek report does not drag it back', c._position() > 110, true);
+  c.hass = hass({ 'media_player.spotify': ctrlState(0, { media_position: 119.8 }) }, cs);
+  eq('the player report after the seek wins', Math.abs(c._position() - 119.8) < 0.3, true);
 
   console.log('\nfeature gating');
   c = makeCard({}, [[{ track_name: 'Creep' }, CREEP]]);

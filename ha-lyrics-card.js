@@ -569,14 +569,28 @@
   }
 
   // media_position is optional in Home Assistant, and it can arrive as a number,
-  // a numeric string or an explicit null. Returns null when there is nothing
-  // usable to anchor to, which is the case for players that only report the
-  // position on track change (Music Assistant driving a cast group, for one).
-  function reportedPos(a) {
+  // a numeric string or an explicit null. media_position_updated_at is just as
+  // important: media_position is only true as of that instant. A card opened
+  // mid-song, or a websocket that was quiet for a while, otherwise starts the
+  // highlight however many seconds behind the last report. Returns null when
+  // there is nothing usable to anchor to, which is the case for players that
+  // only report the position on track change (Music Assistant driving a cast
+  // group, for one). `at` is 0 when no usable timestamp was published.
+  function readPos(a) {
     var v = a ? a.media_position : null;
     if (v == null || v === '') return null;
     var n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n : null;
+    if (!Number.isFinite(n) || n < 0) return null;
+    var at = 0;
+    var u = a.media_position_updated_at;
+    if (typeof u === 'number' && Number.isFinite(u) && u > 0) at = u > 1e11 ? u : u * 1000;
+    else if (typeof u === 'string' && u) {
+      var parsed = Date.parse(u);
+      if (Number.isFinite(parsed)) at = parsed;
+    }
+    // A timestamp in the future means a clock disagreement, not useful data.
+    if (at && at > Date.now() + 60000) at = 0;
+    return { pos: n, at: at };
   }
 
   function fmt(sec) {
@@ -835,6 +849,12 @@
     }
 
     set hass(h) {
+      // Capture where the currently displayed track is before the new snapshot
+      // replaces it: a title change in `h` may already belong to the next song,
+      // and comparing against the old song's progress is what tells a crossfade
+      // tail apart from a genuine new position.
+      var t = this._track();
+      if (t && this._hass) this._last = { key: t.k, entity: t.entity, pos: this._position() };
       this._hass = h;
       if (this.config) this._render();
     }
@@ -1114,11 +1134,58 @@
       var gk = track ? track.k : null;
       if (gk !== this.loadedKey) {
         this.loadedKey = gk;
+        this._trackStart(track, this._last);
         this._load(track);
       }
       this._head(order, track);
       this._controls();
       this._update(true);
+    }
+
+    // A new song on the same player is the one case where a position report can
+    // still describe the track that just ended: with crossfade the outgoing
+    // song's progress stays on the entity for a moment, and some cast groups
+    // leave it there for the first part of the next song. Start such a track at
+    // 0:00 and refuse the reports that predate the switch, so the lyrics do not
+    // open deep into the new song.
+    _trackStart(track, last) {
+      this._ignorePos = false;
+      this._staleFrom = null;
+      this._changedAt = 0;
+      if (!track) return;
+      // Re-loading the same track (toggling show_lyrics, a retry) must not
+      // restart its clock.
+      if (last && last.key === track.k) return;
+      // A title that briefly disappears (or appears late on a stream) changes
+      // the key without changing the song. That is not a track change.
+      if (track.named === false) return;
+      if (last && String(last.key || '').indexOf('untitled|') === 0) return;
+      var s = (this._hass.states || {})[track.entity];
+      if (!s) return;
+      var playing = s.state === 'playing';
+      var rep = readPos(s.attributes || {});
+      var same = !!last && last.entity === track.entity;
+      var stale = false;
+      if (same) {
+        this._changedAt = Date.now();
+        this._staleFrom = last.pos;
+        stale = !!rep && rep.pos > 5 && (
+          rep.at
+            ? (rep.at < this._changedAt - 5000 || Math.abs(rep.pos - this._staleFrom) <= 5)
+            : Math.abs(rep.pos - this._staleFrom) <= 5
+        );
+      }
+      // Neither the previous track's clock nor another player's may carry into
+      // this one. A trusted report restarts it there; anything else starts at
+      // zero and lets the player's next report take over.
+      this.anchor = {
+        pos: stale || !rep ? 0 : this._estimate(rep, playing),
+        raw: rep ? rep.pos : null,
+        rawAt: rep ? rep.at : 0,
+        at: Date.now(),
+        playing: playing
+      };
+      this._ignorePos = stale;
     }
 
     _setText(el, text) {
@@ -1512,7 +1579,6 @@
       this._loading = true;
       this._renderLines();
       this._paintRetry();
-      this._anchor();
       this._update(true);
       var request = useMa
         ? fetchMaLyrics(track.ma, cfg).then(function (d) { return d || fetchLyrics(track); })
@@ -1602,13 +1668,31 @@
       var track = this._track();
       var s = track ? (this._hass.states || {})[track.entity] : null;
       if (!s) { this.anchor = null; return; }
-      var p = reportedPos(s.attributes);
+      var playing = s.state === 'playing';
+      var rep = readPos(s.attributes || {});
       this.anchor = {
-        pos: p == null ? 0 : p,
-        raw: p,
+        pos: this._estimate(rep, playing),
+        raw: rep ? rep.pos : null,
+        rawAt: rep ? rep.at : 0,
         at: Date.now(),
-        playing: s.state === 'playing'
+        playing: playing
       };
+    }
+
+    // media_position is only true as of media_position_updated_at. Carry it
+    // forward to now while playing; a paused player is already at the reported
+    // spot. When a previous estimate is available, the correction is bounded by
+    // the gap to it, so an integration that updates media_position but leaves a
+    // stale timestamp cannot double-count the clock. The age itself is capped
+    // so a broken clock cannot fling the lyrics either.
+    _estimate(rep, playing, ref) {
+      if (!rep) return 0;
+      if (!playing || !rep.at) return rep.pos;
+      var age = (Date.now() - rep.at) / 1000;
+      if (!(age > 0)) return rep.pos;
+      age = Math.min(age, 900);
+      if (ref != null && ref > rep.pos) age = Math.min(age, ref - rep.pos + 3);
+      return rep.pos + age;
     }
 
     _track() {
@@ -1629,6 +1713,7 @@
       if (!s) return 0;
       var a = s.attributes || {};
       var now = Date.now();
+      var playing = s.state === 'playing';
       var an = this.anchor;
       if (!an) { this._anchor(); an = this.anchor; }
       if (!an) return 0;
@@ -1636,27 +1721,75 @@
       an.at = now;
       // Read live rather than latched, so playback that starts after the track
       // appeared (or resumes later) is picked up instead of staying frozen.
-      an.playing = s.state === 'playing';
-      var p = reportedPos(a);
-      if (p == null) {
+      an.playing = playing;
+      var rep = readPos(a);
+      if (rep) {
+        // A fresh sample is one whose value or timestamp has moved. Comparing
+        // both means a player that publishes the same value on every update is
+        // not re-adopted, while one that publishes a new timestamp is.
+        var same = an.raw != null && Math.abs(rep.pos - an.raw) <= 0.5 && rep.at === an.rawAt;
+        if (this._ignorePos) {
+          // The outgoing track's tail, from before the switch, or a report that
+          // cannot be told apart from it on players without a timestamp. The
+          // new track's own first report sits near zero, well below the tail.
+          var since = this._changedAt ? now - this._changedAt : 1e9;
+          var tail = rep.at
+            ? (rep.pos > 30 && this._staleFrom != null && Math.abs(rep.pos - this._staleFrom) <= 5)
+            : (since < 20000 && this._staleFrom != null && rep.pos >= this._staleFrom - 3);
+          var stale = tail || (!!rep.at && rep.at < (this._changedAt || 0) - 5000);
+          if (stale) {
+            // Follow the tail if the player keeps advancing it, so a late
+            // crossfade does not slip past the comparison.
+            if (this._staleFrom == null || rep.pos > this._staleFrom) this._staleFrom = rep.pos;
+            an.raw = rep.pos;
+            an.rawAt = rep.at;
+            same = true;
+          } else {
+            this._ignorePos = false;
+          }
+        }
+        // media_seek is a service call, so the state stream keeps describing
+        // the old spot for a moment. Do not drag the highlight back to it.
+        var g = this._seekGuard;
+        if (g) {
+          var est = this._estimate(rep, playing);
+          if (now - g.at > 3000) this._seekGuard = null;
+          else if (Math.abs(est - g.from) <= 5) {
+            an.raw = rep.pos;
+            an.rawAt = rep.at;
+            same = true;
+          } else {
+            this._seekGuard = null;
+          }
+        }
+        if (!same) {
+          an.pos = this._estimate(rep, playing, an.pos);
+          an.raw = rep.pos;
+          an.rawAt = rep.at;
+        }
+      } else {
         an.raw = null;
-      } else if (an.raw == null || Math.abs(p - an.raw) > 0.5) {
-        an.pos = p;
-        an.raw = p;
+        an.rawAt = 0;
       }
       if (an.pos < 0) an.pos = 0;
       var dur = Number(a.media_duration) || track.duration || 0;
       if (dur > 0 && an.pos > dur) {
         if (an.pos > dur + 2) {
-          // Past the end: the track finished, or the player is still
-          // advertising the tail of the previous one (what MA does to a cast
-          // group). Start again from zero and keep that value as the anchor so
-          // it is not re-adopted on every update.
-          an.pos = 0;
-          an.raw = p;
+          // Past the end: the track finished, or the player is still advertising
+          // the tail of the previous one (what MA does to a cast group). Start
+          // again from zero and keep that value as the anchor so it is not
+          // re-adopted on every update. A trusted timestamp means the player
+          // really is at the end of this track, so only clamp that one.
+          if (rep && rep.at) an.pos = dur;
+          else {
+            an.pos = 0;
+            an.raw = rep ? rep.pos : null;
+            an.rawAt = rep ? rep.at : 0;
+          }
         }
         an.pos = Math.min(an.pos, dur);
       }
+      this._last = { key: track.k, entity: track.entity, pos: an.pos };
       return an.pos;
     }
 
@@ -1912,9 +2045,10 @@
           if (!dur) return;
           var step = ev.key === 'ArrowRight' ? 5 : -5;
           var target = Math.max(0, Math.min(dur, this._position() + step));
-          this.anchor = null;
-          if (this._features(this._track()) & F_SEEK) this._callSvc('media_seek', { seek_position: Math.round(target * 10) / 10 });
-          this._update(true);
+          if (this._features(this._track()) & F_SEEK) {
+            this._callSvc('media_seek', { seek_position: Math.round(target * 10) / 10 });
+            this._seekTo(target, dur);
+          }
         }
         return;
       }
@@ -2020,12 +2154,36 @@
       var dur = this._dur();
       var target = this._scrub;
       this._scrub = null;
-      this.anchor = null;
-      this._update(true);
-      if (dur > 0 && target >= 0 && (this._features(this._track()) & F_SEEK)) {
+      var canSeek = dur > 0 && target >= 0 && (this._features(this._track()) & F_SEEK);
+      if (canSeek) this._seekTo(target, dur);
+      else {
+        this.anchor = null;
+        this._update(true);
+      }
+      if (canSeek) {
         this._callSvc('media_seek', { seek_position: Math.round(target * 10) / 10 });
       }
       this._paintSeek(true);
+    }
+
+    // The seek service is asynchronous, so the state stream still describes the
+    // old position for a moment. Move the clock to the requested spot straight
+    // away and let the guard in _position ignore those outdated reports, or the
+    // highlight jumps back until the player catches up.
+    _seekTo(target, dur) {
+      var track = this._track();
+      var s = track ? this._st(track) : null;
+      var from = this._position();
+      var pos = Math.max(0, Math.min(dur > 0 ? dur : target, target));
+      this.anchor = {
+        pos: pos,
+        raw: null,
+        rawAt: 0,
+        at: Date.now(),
+        playing: !!(s && s.state === 'playing')
+      };
+      this._seekGuard = { at: Date.now(), from: from };
+      this._update(true);
     }
 
     _onDown(ev) {
