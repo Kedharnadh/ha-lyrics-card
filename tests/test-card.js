@@ -207,6 +207,34 @@ function findVolInput(c) {
   eq('a 40s-old report is carried forward', late > 128 && late < 140, true);
   eq('lyrics open at the carried position', c.lineEls[c.active].textContent, 'Your skin makes me cry');
 
+  // Sonos and Music Assistant publish 0 at the track's start and then stay
+  // quiet, so a near-zero report is just as worth carrying forward.
+  cache.clear();
+  c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
+  c.hass = hass({ 'media_player.spotify': aged(0, 35000) });
+  await flush();
+  const fromZero = c._position();
+  eq('a 35s-old report of 0 is carried forward', fromZero > 34 && fromZero < 37, true);
+  eq('lyrics open at the carried zero report', c.lineEls[c.active].textContent, 'Your skin makes me cry');
+
+  // Switching to another player discovers its song too: that player's report
+  // is its own, not an outgoing track's, so it is carried forward as well.
+  cache.clear();
+  c = makeCard({ show_intro: false }, [
+    [{ track_name: 'Creep' }, CREEP],
+    [{ track_name: 'Get Lucky' }, GETLUCKY]
+  ]);
+  const tvAged = player('media_player.tv', 'Get Lucky', 'Daft Punk', 'Random Access Memories', 248, 0);
+  tvAged.attributes.media_position_updated_at = new Date(Date.now() - 22000).toISOString();
+  c.hass = hass({ 'media_player.spotify': aged(90, 1000), 'media_player.tv': tvAged });
+  await flush();
+  eq('starts on the first player', c._tracks[c.idx].title, 'Creep');
+  c._go(1);
+  await flush();
+  const other = c._position();
+  eq('another player\'s 0 report is carried forward', other > 21 && other < 24, true);
+  eq('its lyrics open at the carried position', c.lineEls[c.active].textContent, 'All ends with beginnings');
+
   cache.clear();
   c = makeCard({ show_intro: false }, [[{ track_name: 'Creep' }, CREEP]]);
   c.hass = hass({ 'media_player.spotify': aged(90, 40000, 'paused') });

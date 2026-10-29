@@ -1176,12 +1176,14 @@
       // Neither the previous track's clock nor another player's may carry into
       // this one. A trusted report restarts it there; anything else starts at
       // zero and lets the player's next report take over. Ageing the report is
-      // only right when the card discovers a song that is already underway: at a
-      // track change the timestamp still belongs to the outgoing song, so
-      // carrying it forward is what made a crossfaded song start ahead.
-      var first = !last;
+      // only right when the card discovers a song that is already underway (a
+      // first look, or another player): at a track change on the same player the
+      // timestamp still belongs to the outgoing song, so carrying it forward is
+      // what made a crossfaded song start ahead. A report near zero is aged too:
+      // Sonos and Music Assistant publish 0 at the track's start and then stay
+      // quiet, so it is often the only report there is.
       var pos = 0;
-      if (!stale && rep) pos = first && rep.pos > 5 ? this._estimate(rep, playing) : rep.pos;
+      if (!stale && rep) pos = same ? rep.pos : this._estimate(rep, playing);
       this.anchor = {
         pos: pos,
         raw: rep ? rep.pos : null,
