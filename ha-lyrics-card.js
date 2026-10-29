@@ -751,6 +751,11 @@
     'ha-card.artmode.art-cover .hero{inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;border-radius:0;object-fit:cover}',
     'ha-card.fixed.artmode .vp{flex:1 1 0;min-height:0}',
     'ha-card.fixed.artmode .pane,ha-card.fixed.artmode .stage{height:100%}',
+    // With a fixed card height the lyrics stage must be bounded too, or it grows
+    // to the full song length, never scrolls, and pushes the header out of the
+    // clipped card.
+    'ha-card.fixed .vp{flex:1 1 0;min-height:0}',
+    'ha-card.fixed .pane,ha-card.fixed .stage{height:100%}',
     '.lines{min-height:100%}',
     '.lines.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100%;text-align:center}',
     '.lines.fixed{display:flex;flex-direction:column;justify-content:center}',
@@ -1019,6 +1024,7 @@
       if (st && !this._isFixed()) pad = Math.max(0, Math.round((st - lh) / 2));
       e.lines.style.paddingTop = pad + 'px';
       e.lines.style.paddingBottom = pad + 'px';
+      this._fixedPad();
       var s = this.style;
       s.setProperty('--fb', c.font_size + 'px');
       s.setProperty('--lb', c.line_height + 'px');
@@ -1043,6 +1049,24 @@
       if (ts) s.setProperty('--npc-ts', ts);
       else s.removeProperty('--npc-ts');
       this._applyTextColor();
+    }
+
+    // _stagePx() is 0 with a fixed card height, so the lines got no centering
+    // pad and the first and last lines stayed in the masked (faded) edges even
+    // while active. Pad from the stage's real height instead; it is only known
+    // after layout, so _scrollTo() re-checks it.
+    _fixedPad() {
+      var c = this.config;
+      var e = this.el;
+      if (!c || !e || this._stagePx() || this._isFixed() || !(c.height > 0 || c.card_height)) return;
+      var h = e.stage.clientHeight;
+      if (!h) return;
+      var lh = this.data && this.data.kind === 'static' ? Math.round(c.static_font_size * 1.6) : c.line_height;
+      var pad = Math.max(0, Math.round((h - lh) / 2)) + 'px';
+      if (e.lines.style.paddingTop === pad) return;
+      e.lines.style.paddingTop = pad;
+      e.lines.style.paddingBottom = pad;
+      this._scrollTarget = null;
     }
 
     _stagePx() {
@@ -1853,6 +1877,7 @@
 
     _scrollTo(el) {
       if (!el) return;
+      this._fixedPad();
       var stage = this.el.stage;
       var top = Math.max(0, el.offsetTop - stage.clientHeight / 2 + el.offsetHeight / 2);
       if (this._scrollTarget != null && Math.abs(this._scrollTarget - top) < 1.5) return;
