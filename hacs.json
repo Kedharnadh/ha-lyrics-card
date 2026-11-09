@@ -2,6 +2,7 @@
   "name": "Now Playing & Lyrics Card",
   "render_readme": true,
   "filename": "ha-lyrics-card.js",
+  "content_in_root": true,
   "homeassistant": "2024.1.0",
   "hacs": "1.28.0"
 }

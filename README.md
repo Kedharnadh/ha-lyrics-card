@@ -64,23 +64,60 @@ raw 82.1 KB   ·   gzip ~21 KB
   **Retry** button appears when a lookup finds nothing so you can re-run it. Any
   UI copy can be translated or overridden via the `strings` option.
 
-## Installation (HACS)
+<!-- ha-marketplace:exclude-start -->
+## Installation
+
+On Home Assistant **2026.11 or newer** the built-in **Marketplace** installs and
+updates this card. On **2026.10 or older** use **HACS**. This is a custom
+repository — it is not in the default catalog — so you add it by its GitHub link.
+
+[![Open your Home Assistant instance and open this repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Kedharnadh&repository=ha-lyrics-card&category=plugin)
+
+> The link above opens the repository in the Marketplace (2026.11+) or in HACS
+> (older versions), and offers to add it as a custom repository if it is not known
+> yet.
+
+### Home Assistant 2026.11 or newer (Marketplace)
+
+1. Go to **Settings** → **Marketplace** and accept the warning the first time.
+2. If the Marketplace asks you to connect GitHub, follow the device sign-in
+   prompt. You can also connect ahead of time via **Settings** → **Devices &
+   services** → **Marketplace** → ⋮ → **Reconfigure**.
+3. In the upper-right corner, select **Add from link**.
+4. Enter `https://github.com/Kedharnadh/ha-lyrics-card` (or
+   `Kedharnadh/ha-lyrics-card`). If the type cannot be detected, select
+   **Dashboard** under **Type**.
+5. Select the repository and choose **Install**. The card goes to
+   `config/www/community/ha-lyrics-card/` and is added as a dashboard resource
+   automatically.
+6. Reload Lovelace (`Ctrl` + `F5` / hard refresh).
+
+If the resource is missing, add it under **Settings** → **Dashboards** → ⋮ →
+**Resources**:
+
+| | |
+| --- | --- |
+| URL | `/local/community/ha-lyrics-card/ha-lyrics-card.js` |
+| Type | **JavaScript module** |
+
+> The old HACS path `/hacsfiles/ha-lyrics-card/ha-lyrics-card.js` keeps working
+> through the migration.
+
+### Home Assistant 2026.10 or older (HACS)
 
 1. Install [HACS](https://hacs.xyz/) if you haven't already.
-2. Push this repository to GitHub as **`ha-lyrics-card`**. HACS matches the
-   dashboard file to the repository name, and `hacs.json` pins it explicitly via
-   `filename`, so the file name must stay `ha-lyrics-card.js`.
-3. HACS → **Dashboard** → ⋮ → **Custom repositories** → add
+2. HACS → **Dashboard** → ⋮ → **Custom repositories** → add
    `https://github.com/Kedharnadh/ha-lyrics-card` with category **Dashboard**.
-4. Search HACS for **Now Playing & Lyrics Card** → **Download**.
-5. **Settings → Dashboards → Resources** and add, if HACS didn't already:
+3. Search HACS for **Now Playing & Lyrics Card** → **Download**.
+4. **Settings → Dashboards → Resources** and add, if HACS didn't already:
 
    | | |
    | --- | --- |
    | URL | `/hacsfiles/ha-lyrics-card/ha-lyrics-card.js` |
    | Type | **JavaScript module** |
 
-6. Reload Lovelace (`Ctrl` + `F5` / hard refresh).
+5. Reload Lovelace (`Ctrl` + `F5` / hard refresh).
+<!-- ha-marketplace:exclude-end -->
 
 ## Usage
 
@@ -331,19 +368,25 @@ Also worth knowing:
   group usually reports it only on track change and pause/resume, and sometimes
   not at all. The card still scrolls along; see [Notes](#notes).
 
+<!-- ha-marketplace:exclude-start -->
 ## Manual installation
 
 Copy `ha-lyrics-card.js` into `config/www/`, add
 `/local/ha-lyrics-card.js` as a **JavaScript module** resource, then use
 `type: custom:ha-lyrics-card`.
+<!-- ha-marketplace:exclude-end -->
 
 ## Development / CI
 
 - `.github/workflows/hacs.yaml` runs [HACS validation](https://github.com/hacs/action)
-  plus the test suite on every push and pull request.
+  plus the test suite on every push and pull request. The same checks are what the
+  Marketplace catalog review looks at, so keep them green.
+- The card file must stay named `ha-lyrics-card.js` in the repository root: the
+  Marketplace matches the dashboard file to the repository name, and `hacs.json`
+  pins it explicitly via `filename`.
 - `.github/workflows/release.yaml` turns a tag (`v1.1.0`) into a GitHub Release.
-  HACS tracks the default branch for updates, so tagging is only needed if you
-  want a release page.
+  The Marketplace installs and updates from releases (HACS also tracks the default
+  branch), so tag a release when you want the new version offered to users.
 - Tests are plain Node scripts, no dependencies:
 
   ```
